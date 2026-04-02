@@ -1,0 +1,9 @@
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+username = "gillmanas"
+token_env = "RADMACHINE_TOKEN"
+
+[logbook]
+default_file = "~/org/teap-logbook.org"
+timezone = "Australia/Brisbane"

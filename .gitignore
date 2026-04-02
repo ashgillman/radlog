@@ -1,0 +1,11 @@
+# User secrets
+/config.toml
+
+# Development
+/.agent-shell/
+/.pytest_cache/
+/.direnv/
+__pycache__/
+
+# OS
+/.DS_Store

@@ -1,17 +1,16 @@
 #+title: TODO - RadMachine → Org Logbook Importer
 
 * TODO Project scaffolding
-- [ ] Create Python package skeleton under =radlog/=
-- [ ] Create Emacs Lisp entrypoint under =elisp/radlog.el=
-- [ ] Add =pyproject.toml=
-- [ ] Choose packaging/build tool (=uv=, =poetry=, or plain =pip= tooling)
-- [ ] Add =config.toml.example=
-- [ ] Add =.env.example=
-- [ ] Add =tests/= directory
-- [ ] Add =examples/sample_api_payloads/= directory
+- [ ] Keep the initial scaffold minimal; add tests/examples when they unblock real work
+
+* TODO Nix environment
+- [ ] Confirm =.envrc= works with =use flake=
+- [ ] Document the expected =nix develop= / =direnv allow= workflow
+
+* TODO Testing
+- [ ] Add higher-value tests once grouping and rendering stop moving
 
 * TODO RadMachine client
-- [ ] Implement configuration loading
 - [ ] Read token from environment variable
 - [ ] Implement authenticated HTTP session
 - [ ] Implement pagination helper for DRF-style =results=
@@ -33,10 +32,6 @@
 - [ ] Confirm whether service events and faults expose attached metadata of interest
 
 * TODO Normalized models
-- [ ] Define =SourceRecord=
-- [ ] Define =CandidateEntry=
-- [ ] Define =PerformedItem=
-- [ ] Define =FlaggedItem=
 - [ ] Define validation / parsing layer for raw payloads
 - [ ] Preserve raw payload snapshots in normalized models for debugging
 
@@ -48,7 +43,7 @@
 - [ ] Write classifier for service events
 - [ ] Write classifier for faults
 - [ ] Write classifier for ABC weekly QA
-- [ ] Add fixture-based tests for classifiers
+- [ ] Add tests for classifiers once fixture shape stabilizes
 
 * TODO Grouping
 - [ ] Define grouping key strategy
@@ -57,7 +52,7 @@
 - [ ] Merge performed items within a candidate entry
 - [ ] Surface tolerance/action/flagged items separately
 - [ ] Preserve source IDs in each grouped entry
-- [ ] Write tests for grouping edge cases
+- [ ] Write tests for grouping edge cases once grouping rules exist
 
 * TODO Rendering
 - [ ] Implement Org renderer for =linac_mqc=
@@ -67,19 +62,9 @@
 - [ ] Implement Org renderer for =fault=
 - [ ] Add prompt scaffolding for “Notable events”
 - [ ] Add prompt scaffolding for flagged/tolerance/action items
-- [ ] Add renderer golden-file tests
+- [ ] Add renderer tests after the initial Org shape settles
 
 * TODO CLI
-- [ ] Implement =python -m radlog.cli= entrypoint
-- [ ] Support arguments:
-  - [ ] =--start=
-  - [ ] =--end=
-  - [ ] =--user=
-  - [ ] =--format json=
-- [ ] Emit structured JSON only to stdout
-- [ ] Emit logs/errors to stderr
-- [ ] Add exit codes suitable for Emacs integration
-
 * TODO Emacs integration
 - [ ] Implement =radlog-import-radmachine=
 - [ ] Prompt for start date
@@ -118,8 +103,8 @@
   - [ ] CT monthly QA-like record set
   - [ ] service event
   - [ ] fault
-- [ ] Create example JSON candidate outputs
-- [ ] Create example rendered Org outputs
+- [ ] Create example JSON candidate outputs when the CLI format is less fluid
+- [ ] Create example rendered Org outputs when renderer structure is less fluid
 
 * TODO Documentation
 - [ ] Document local setup
