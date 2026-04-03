@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 from radlog.cli import main
 
 
-def test_cli_emits_json_payload(capsys, tmp_path) -> None:
+def test_cli_emits_json_payload(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -13,19 +14,22 @@ def test_cli_emits_json_payload(capsys, tmp_path) -> None:
 base_url = "https://radmachine.radformation.com"
 customer_id = "tcc"
 username = "default-user"
+token_env = "RADMACHINE_TOKEN"
 """.strip()
     )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
-    exit_code = main(
-        [
-            "--config",
-            str(config_file),
-            "--start",
-            "2026-03-01",
-            "--end",
-            "2026-03-31",
-        ]
-    )
+    with patch("radlog.cli.RadMachineClient.get_json", return_value={"qa": "endpoint"}) as get_json:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--start",
+                "2026-03-01",
+                "--end",
+                "2026-03-31",
+            ]
+        )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -35,7 +39,11 @@ username = "default-user"
     assert payload["start"] == "2026-03-01"
     assert payload["end"] == "2026-03-31"
     assert payload["user"] == "default-user"
+    assert payload["endpoint"] == "/"
+    assert payload["server"] == {"qa": "endpoint"}
+    assert payload["records"] is None
     assert payload["candidates"] == []
+    get_json.assert_called_once_with("", params={})
 
 
 def test_cli_reports_missing_config(capsys) -> None:
@@ -46,3 +54,194 @@ def test_cli_reports_missing_config(capsys) -> None:
     assert exit_code == 2
     assert captured.out == ""
     assert "Config file not found" in captured.err
+
+
+def test_cli_reports_missing_token(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.delenv("RADMACHINE_TOKEN", raising=False)
+
+    exit_code = main(["--config", str(config_file)])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "RADMACHINE_TOKEN" in captured.err
+
+
+def test_cli_uses_pagination_when_requested(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.RadMachineClient.paginate", return_value=iter([{"id": 1}, {"id": 2}])) as paginate:
+        exit_code = main(["--config", str(config_file), "--endpoint", "qa/", "--paginate"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] == [{"id": 1}, {"id": 2}]
+    assert payload["records"] is None
+    paginate.assert_called_once_with("qa/", params={})
+
+
+def test_cli_supports_custom_query_params(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.RadMachineClient.get_json", return_value={"ok": True}) as get_json:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--endpoint",
+                "qa/testinstances",
+                "--limit",
+                "2",
+                "--offset",
+                "10",
+                "--param",
+                "created_by__username=gillmanas",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] == {"ok": True}
+    get_json.assert_called_once_with(
+        "qa/testinstances",
+        params={"limit": "2", "offset": "10", "created_by__username": "gillmanas"},
+    )
+
+
+def test_cli_collects_qa_sessions(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+username = "default-user"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch(
+        "radlog.cli.collect_qa_sessions",
+        return_value=[
+            {
+                "source_type": "qa_session",
+                "remote_id": "13162",
+                "title": "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
+            }
+        ],
+    ):
+        with patch("radlog.cli.serialize_source_records", return_value=[{"remote_id": "13162"}]) as serialize:
+            exit_code = main(
+                [
+                    "--config",
+                    str(config_file),
+                    "--collect",
+                    "qa-sessions",
+                    "--start",
+                    "2026-03-01",
+                    "--end",
+                    "2026-03-31",
+                ]
+            )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] is None
+    assert payload["records"] == [{"remote_id": "13162"}]
+    serialize.assert_called_once()
+
+
+def test_cli_collects_qa_candidates(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+username = "default-user"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.collect_qa_sessions", return_value=[{"remote_id": "13162"}]):
+        with patch("radlog.cli.serialize_source_records", return_value=[{"remote_id": "13162"}]):
+            with patch("radlog.cli.group_source_records", return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}]):
+                with patch(
+                    "radlog.cli.serialize_candidate_entries",
+                    return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}],
+                ):
+                    exit_code = main(
+                        [
+                            "--config",
+                            str(config_file),
+                            "--collect",
+                            "qa-candidates",
+                            "--start",
+                            "2026-03-01",
+                            "--end",
+                            "2026-03-31",
+                        ]
+                    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] is None
+    assert payload["records"] == [{"remote_id": "13162"}]
+    assert payload["candidates"] == [{"group_key": "2026-03-06_LA7_linac_monthly"}]
+
+
+def test_cli_rejects_invalid_param(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "tcc"
+token_env = "RADMACHINE_TOKEN"
+""".strip()
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(["--config", str(config_file), "--param", "badparam"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "expected KEY=VALUE" in captured.err

@@ -4,31 +4,21 @@
 - [ ] Keep the initial scaffold minimal; add tests/examples when they unblock real work
 
 * TODO Nix environment
-- [ ] Confirm =.envrc= works with =use flake=
 - [ ] Document the expected =nix develop= / =direnv allow= workflow
 
 * TODO Testing
 - [ ] Add higher-value tests once grouping and rendering stop moving
 
 * TODO RadMachine client
-- [ ] Read token from environment variable
-- [ ] Implement authenticated HTTP session
-- [ ] Implement pagination helper for DRF-style =results=
-- [ ] Implement date-range query support
-- [ ] Implement user filter support
-- [ ] Identify and implement first known QA endpoint
 - [ ] Add structured error handling for 401/403/404/5xx
 - [ ] Add low-rate request throttling
 - [ ] Save example raw payloads for local development
 
 * TODO Endpoint discovery
 - [ ] Confirm actual site-specific endpoints for:
-  - [ ] QA records
   - [ ] service events
   - [ ] faults
 - [ ] Confirm relevant timestamp fields for incremental/date-range filtering
-- [ ] Confirm user fields for filtering (=created_by=, username, etc.)
-- [ ] Confirm unit/site fields needed for grouping
 - [ ] Confirm whether service events and faults expose attached metadata of interest
 
 * TODO Normalized models
@@ -46,13 +36,10 @@
 - [ ] Add tests for classifiers once fixture shape stabilizes
 
 * TODO Grouping
-- [ ] Define grouping key strategy
-- [ ] Implement grouping by date + unit + inferred work type
 - [ ] Decide when same-day items should merge vs split
 - [ ] Merge performed items within a candidate entry
 - [ ] Surface tolerance/action/flagged items separately
-- [ ] Preserve source IDs in each grouped entry
-- [ ] Write tests for grouping edge cases once grouping rules exist
+- [ ] Expand grouping tests beyond the initial monthly-QA cases
 
 * TODO Rendering
 - [ ] Implement Org renderer for =linac_mqc=
@@ -125,8 +112,6 @@
 - [ ] TUI preview for non-Emacs testing
 
 * TODO First milestone definition
-- [ ] Can fetch or mock records for a date range
-- [ ] Can group records into at least one candidate LA7 MQC-style entry
 - [ ] Can render draft Org text
 - [ ] Can review in Emacs
 - [ ] Can insert accepted entry into a logbook

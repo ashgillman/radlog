@@ -4,6 +4,10 @@ Check README.org for project context if not in your recent history.
 
 Check TODO.org when identifying tasks or otherwise planning. Update that file when you complete a task by removing the entry, rather than marking done (git will be the history, not that file).
 
+Use multi-line commit messages. First line short summary, subsequent lines give moderate detail in dot points.
+
+Prefer TDD - failing test -> changes -> passing test
+
 * Problem Statement
 
 The logbook already contains curated entries such as:
@@ -350,6 +354,215 @@ Therefore the implementation should:
 - be tolerant of partial knowledge,
 - support stub/example payloads for development,
 - avoid baking undocumented assumptions throughout the codebase.
+
+* Confirmed API Map
+
+This section summarizes what has been confirmed from the public examples and the
+live TCC instance. Treat this as the current working map of the API.
+
+** Auth and base URL
+
+- Header: =RadAuthorization: Token <token>=
+- Base API root: =https://radmachine.radformation.com/{customer_id}/api/=
+- Token should come from an environment variable, not committed config
+- Responses observed are JSON and DRF-style
+
+** API roots observed on the live instance
+
+#+begin_src json
+{
+  "/api/": [
+    "auth",
+    "attachments",
+    "backups",
+    "contenttypes",
+    "faults",
+    "parts",
+    "qa",
+    "reports",
+    "schema",
+    "servicelog",
+    "units"
+  ],
+  "/api/qa/": [
+    "autoreviewrules",
+    "autoreviewrulesets",
+    "categories",
+    "frequencies",
+    "references",
+    "reviewstatus",
+    "sublists",
+    "testinstances",
+    "testlistcycles",
+    "testlistcyclememberships",
+    "testlistinstances",
+    "testlists",
+    "testlists-details",
+    "testlistmemberships",
+    "tests",
+    "tolerances",
+    "unittestcollections",
+    "unittestinfos"
+  ],
+  "/api/units/": [
+    "availabletimeedits",
+    "availabletimes",
+    "modalities",
+    "rooms",
+    "sites",
+    "storages",
+    "unitclasses",
+    "units",
+    "unittypes",
+    "vendors"
+  ]
+}
+#+end_src
+
+** Object model that matters for QA imports
+
+#+begin_src text
+testlists
+  = template / definition of a test list
+
+unittestcollections
+  = assignment of a test list to a unit
+  = useful human name for the assigned QA activity
+  = has unit, due_date, last_instance, frequency
+
+testlistinstances
+  = one performed QA session
+  = has work_started/work_completed, comments, flagged, embedded test_instances
+  = links to unit_test_collection and test_list
+
+testinstances
+  = one individual result row within a performed session
+  = has value/pass_fail/skipped/work_completed plus links to unit_test_info and test_list_instance
+#+end_src
+
+For authored logbook imports, the most promising primary source is
+=qa/testlistinstances/=, with =unittestcollections= and =units/units= used as
+lookup/context.
+
+** Useful confirmed filters
+
+These are based on the public example scripts and live probing.
+
+#+begin_src text
+GET /api/qa/testinstances/
+  created_by__username=<username>
+  unit_test_info__unit__name=<unit name>
+  unit_test_info__test__name=<test name>
+  skipped=False
+  ordering=-work_completed
+  limit=<n>
+  offset=<n>
+
+GET /api/qa/testlistinstances/
+  unit_test_collection__unit__name=<unit name>
+  unit_test_collection__test_list__name=<test list name>
+  ordering=-work_completed
+  limit=<n>
+  offset=<n>
+
+GET /api/qa/unittestcollections/
+  unit__name=<unit name>
+  test_list__name=<test list name>
+  limit=<n>
+  offset=<n>
+#+end_src
+
+It is reasonable to expect other Django/DRF relation filters to work, but treat
+that as inference until verified on the live instance.
+
+** Response shapes worth remembering
+
+Paginated endpoints use the DRF envelope:
+
+#+begin_src json
+{
+  "count": 13308,
+  "next": "https://...offset=10",
+  "previous": null,
+  "results": [ ... ]
+}
+#+end_src
+
+Representative =testlistinstance= fields:
+
+#+begin_src text
+url
+comments[]
+test_instances[]
+site_url
+report_url
+work_started
+work_completed
+due_date
+flagged
+reviewed
+unit_test_collection
+test_list
+created_by
+modified_by
+#+end_src
+
+Representative =unittestcollection= fields:
+
+#+begin_src text
+url
+name
+unit
+frequency
+due_date
+last_instance
+tests_object
+next_test_list
+#+end_src
+
+Representative =units/units= fields:
+
+#+begin_src text
+pk
+url
+name              # e.g. "LA7 - Hayman"
+site
+type
+active
+is_serviceable
+modalities
+attributes
+#+end_src
+
+** Concrete known mapping
+
+Known real example:
+
+- Site URL: =/tcc/qa/session/details/13162/=
+- API record: =/tcc/api/qa/testlistinstances/13162/=
+- Linked collection: =/tcc/api/qa/unittestcollections/206/=
+- Collection name: =Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV=
+- Linked unit: =/tcc/api/units/units/2/=
+- Unit name: =LA7 - Hayman=
+
+This indicates that a report title such as:
+
+#+begin_example
+LA7 - Hayman - Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV - 06 Mar 2026 10:10 AEST
+#+end_example
+
+is effectively composed from:
+
+- unit name from =units/units/<id>=
+- assignment name from =unittestcollections/<id>=
+- performed timestamp from =testlistinstances.work_completed=
+
+** Grouping implication
+
+Do not assume one authored logbook entry equals one RadMachine
+=testlistinstance=. A monthly QA summary is likely composed of multiple sibling
+=testlistinstances= on the same date/unit whose collection names share a common
+prefix such as =Linac Monthly ::=.
 
 * Development Approach
 

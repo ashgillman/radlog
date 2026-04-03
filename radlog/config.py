@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,10 @@ class Config:
     render: RenderConfig
 
 
+class ConfigError(ValueError):
+    """Raised when required configuration is missing or invalid."""
+
+
 def load_config(path: str | Path) -> Config:
     raw = _load_toml(path)
     return Config(
@@ -63,3 +68,23 @@ def _load_toml(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Config file {config_path} did not contain a TOML table")
     return data
+
+
+def get_token(config: Config) -> str:
+    token_env = config.radmachine.token_env
+    if not token_env:
+        raise ConfigError("radmachine.token_env must name the environment variable holding the API token")
+
+    token = os.environ.get(token_env)
+    if not token:
+        raise ConfigError(
+            f"Environment variable {token_env} is not set; export the RadMachine API token before running radlog"
+        )
+    return token
+
+
+def validate_radmachine_config(config: Config) -> None:
+    if not config.radmachine.base_url:
+        raise ConfigError("radmachine.base_url is required")
+    if not config.radmachine.customer_id:
+        raise ConfigError("radmachine.customer_id is required")
