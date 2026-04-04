@@ -320,8 +320,8 @@ Suggested fields:
 #+begin_src toml
 [radmachine]
 base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
-username = "gillmanas"
+customer_id = "your-customer-id"
+username = "your-username"
 token_env = "RADMACHINE_TOKEN"
 
 [logbook]
@@ -359,8 +359,8 @@ Therefore the implementation should:
 
 * Confirmed API Map
 
-This section summarizes what has been confirmed from the public examples and the
-live TCC instance. Treat this as the current working map of the API.
+This section summarizes what has been confirmed from the public examples and a
+live customer instance. Treat this as the current working map of the API.
 
 ** Auth and base URL
 
@@ -540,11 +540,11 @@ attributes
 
 Known real example:
 
-- Site URL: =/tcc/qa/session/details/13162/=
-- API record: =/tcc/api/qa/testlistinstances/13162/=
-- Linked collection: =/tcc/api/qa/unittestcollections/206/=
+- Site URL: =/{customer_id}/qa/session/details/13162/=
+- API record: =/{customer_id}/api/qa/testlistinstances/13162/=
+- Linked collection: =/{customer_id}/api/qa/unittestcollections/206/=
 - Collection name: =Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV=
-- Linked unit: =/tcc/api/units/units/2/=
+- Linked unit: =/{customer_id}/api/units/units/2/=
 - Unit name: =LA7 - Hayman=
 
 This indicates that a report title such as:

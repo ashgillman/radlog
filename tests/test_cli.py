@@ -4,6 +4,7 @@ import json
 from unittest.mock import patch
 
 from radlog.cli import main
+from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
 def test_cli_emits_json_payload(capsys, tmp_path, monkeypatch) -> None:
@@ -11,11 +12,11 @@ def test_cli_emits_json_payload(capsys, tmp_path, monkeypatch) -> None:
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 username = "default-user"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
@@ -61,10 +62,10 @@ def test_cli_reports_missing_token(capsys, tmp_path, monkeypatch) -> None:
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.delenv("RADMACHINE_TOKEN", raising=False)
 
@@ -82,10 +83,10 @@ def test_cli_uses_pagination_when_requested(capsys, tmp_path, monkeypatch) -> No
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
@@ -106,10 +107,10 @@ def test_cli_supports_custom_query_params(capsys, tmp_path, monkeypatch) -> None
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
@@ -125,7 +126,7 @@ token_env = "RADMACHINE_TOKEN"
                 "--offset",
                 "10",
                 "--param",
-                "created_by__username=gillmanas",
+                "created_by__username=example-user",
             ]
         )
 
@@ -136,7 +137,7 @@ token_env = "RADMACHINE_TOKEN"
     assert payload["server"] == {"ok": True}
     get_json.assert_called_once_with(
         "qa/testinstances",
-        params={"limit": "2", "offset": "10", "created_by__username": "gillmanas"},
+        params={"limit": "2", "offset": "10", "created_by__username": "example-user"},
     )
 
 
@@ -145,11 +146,11 @@ def test_cli_collects_qa_sessions(capsys, tmp_path, monkeypatch) -> None:
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 username = "default-user"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
@@ -191,11 +192,11 @@ def test_cli_collects_qa_candidates(capsys, tmp_path, monkeypatch) -> None:
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 username = "default-user"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
@@ -233,10 +234,10 @@ def test_cli_rejects_invalid_param(capsys, tmp_path, monkeypatch) -> None:
     config_file.write_text(
         """
 [radmachine]
-base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
+base_url = "{base_url}"
+customer_id = "{customer_id}"
 token_env = "RADMACHINE_TOKEN"
-""".strip()
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
