@@ -8,6 +8,8 @@ Use multi-line commit messages. First line short summary, subsequent lines give 
 
 Prefer TDD - failing test -> changes -> passing test
 
+Always check what's added after a blanket command like `git add .`, before committing.
+
 * Problem Statement
 
 The logbook already contains curated entries such as:
@@ -563,6 +565,20 @@ Do not assume one authored logbook entry equals one RadMachine
 =testlistinstance=. A monthly QA summary is likely composed of multiple sibling
 =testlistinstances= on the same date/unit whose collection names share a common
 prefix such as =Linac Monthly ::=.
+
+** Current proven path
+
+As of the current repo state, the most proven end-to-end slice is:
+
+- collect live =qa/testlistinstances=
+- resolve =unit_test_collection= and =unit=
+- normalize to =SourceRecord=
+- group same-day same-unit =Linac Monthly ::= sessions into a =linac_mqc=
+  candidate
+- render draft Org text into =CandidateEntry.rendered_org=
+
+This path is good enough for manual verification and iterative refinement, even
+though grouping and rendered text are still intentionally rough.
 
 * Development Approach
 

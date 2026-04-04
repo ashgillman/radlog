@@ -42,13 +42,11 @@
 - [ ] Expand grouping tests beyond the initial monthly-QA cases
 
 * TODO Rendering
-- [ ] Implement Org renderer for =linac_mqc=
 - [ ] Implement Org renderer for =post_pmi=
 - [ ] Implement Org renderer for =ct_monthly=
 - [ ] Implement Org renderer for =service_event=
 - [ ] Implement Org renderer for =fault=
 - [ ] Add prompt scaffolding for “Notable events”
-- [ ] Add prompt scaffolding for flagged/tolerance/action items
 - [ ] Add renderer tests after the initial Org shape settles
 
 * TODO CLI
@@ -112,7 +110,6 @@
 - [ ] TUI preview for non-Emacs testing
 
 * TODO First milestone definition
-- [ ] Can render draft Org text
 - [ ] Can review in Emacs
 - [ ] Can insert accepted entry into a logbook
 - [ ] Can avoid obvious duplicate insertion

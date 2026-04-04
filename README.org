@@ -1,15 +1,134 @@
-#+title: RadMachine → Org Logbook Importer
+#+title: RadMachine -> Org Logbook Importer
 #+author: Ashley Gillman, OpenAI
 
 * Overview
 
-This repository is intended to build a small, inspectable toolchain for importing activity from RadMachine into an Org-mode logbook.
+This repository is building a small import-and-review tool for turning
+RadMachine activity into draft Org logbook entries.
 
-The aim is:
-1. Pull RadMachine records for a given user and date range.
-2. Normalise and group those records into candidate logbook entries, this should be user-configurable
-3. Present each candidate entry in Emacs for review.
-4. Allow the user to edit, accept, or skip each entry.
-5. Insert accepted entries into an Org logbook.
+The intent is not to dump raw API exports into Org. The tool should fetch
+structured operational data, infer likely authored logbook entries, render a
+draft, and leave the final wording to review and editing.
 
+* What Works Now
 
+Current implemented functionality:
+
+- Nix + direnv development environment
+- token-based RadMachine API access via environment variable
+- live API probing from the CLI
+- live collection of QA session data from =qa/testlistinstances=
+- lookup and normalization of linked =unittestcollections= and =units/units=
+- initial grouping of same-day same-unit =Linac Monthly ::= sessions into a
+  =linac_mqc= candidate
+- draft Org rendering for =linac_mqc= candidates
+- automated tests for config loading, CLI behavior, collection, grouping, and
+  rendering
+
+This means the repository can already fetch real monthly linac QA data and emit
+draft Org text that is close enough to inspect manually.
+
+* Current CLI Use
+
+Assuming =config.toml= is present and =RADMACHINE_TOKEN= is available via
+=direnv=:
+
+#+begin_src sh
+direnv allow
+python -m radlog.cli --config config.toml --format json
+#+end_src
+
+Useful current modes:
+
+- probe API root:
+
+#+begin_src sh
+python -m radlog.cli --config config.toml
+#+end_src
+
+- collect normalized QA sessions:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --collect qa-sessions \
+  --start 2026-03-06 \
+  --end 2026-03-06 \
+  --param 'unit_test_collection__unit__name=LA7 - Hayman'
+#+end_src
+
+- collect grouped QA candidates with rendered Org:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --collect qa-candidates \
+  --start 2026-03-06 \
+  --end 2026-03-06 \
+  --param 'unit_test_collection__unit__name=LA7 - Hayman' \
+  --limit 20
+#+end_src
+
+* Current Output Shape
+
+The CLI currently emits JSON with:
+
+- request metadata
+- redacted config
+- =server= for raw endpoint probes
+- =records= for normalized source records
+- =candidates= for grouped entries
+
+For =linac_mqc= candidates, =rendered_org= now contains the draft Org text.
+
+* Example Draft
+
+Representative current output for a monthly linac QA candidate:
+
+#+begin_example
+**** [2026-03-06 Fri] LA7 MQC :Hayman:LA7:
+:PROPERTIES:
+:RM_GROUP_KEY: 2026-03-06_LA7_linac_monthly
+:RM_SOURCE_IDS: qa:13162,qa:13163,qa:13164,qa:13165
+:END:
+Performed as rostered duty:
+- Dosimetry :: Output and relative dosimetry :: 10 MV
+- Dosimetry :: Output and relative dosimetry :: 6 MV
+- Dosimetry :: Output and relative dosimetry :: 6 MV
+- Dosimetry :: Output and relative dosimetry :: 10 MV
+
+Notable events:
+- Output verification/re-baselining
+- Baselines are being reviewed on 10/3
+- Manually enter here
+#+end_example
+
+This is intentionally still a draft. The grouping and rendering need more work,
+but the basic end-to-end path from live API data to draft Org text is now in
+place.
+
+* Configuration
+
+Expected local setup:
+
+- copy =config.toml.example= to =config.toml=
+- keep =token_env = "RADMACHINE_TOKEN"= in config
+- place the actual token in a local =.env=
+- let =direnv= load it via =.envrc=
+
+* What Is Next
+
+Immediate next work:
+
+- improve grouping so full linac monthly QA sets collapse cleanly
+- deduplicate rendered items and comments
+- add better prompt scaffolding for notable events
+- wire the rendered candidates into the Emacs review flow
+
+Broader later work:
+
+- post-PMI QA
+- CT monthly QA
+- service events
+- faults
+- duplicate detection during insertion

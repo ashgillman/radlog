@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from .models import CandidateEntry, PerformedItem, SourceRecord
+from .render import render_candidate
 
 
 def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
@@ -25,7 +26,12 @@ def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
 
 
 def serialize_candidate_entries(entries: list[CandidateEntry]) -> list[dict]:
-    return [asdict(entry) for entry in entries]
+    serialized: list[dict] = []
+    for entry in entries:
+        if entry.rendered_org is None:
+            entry.rendered_org = render_candidate(entry)
+        serialized.append(asdict(entry))
+    return serialized
 
 
 def _record_sort_key(record: SourceRecord) -> tuple[str, str, str]:
@@ -62,9 +68,11 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         tags = [tag for tag in (site, unit) if tag]
 
     performed_items = [
-        PerformedItem(category=_performed_item_category(record), label=record.title or record.remote_id)
+        PerformedItem(category=_performed_item_category(record), label=_performed_item_label(record))
         for record in records
     ]
+
+    prompts = _notable_prompts(records)
 
     return CandidateEntry(
         entry_type=entry_type,
@@ -75,7 +83,7 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         unit=unit,
         tags=tags,
         performed_items=performed_items,
-        notable_prompts=["Review comments and flagged results"],
+        notable_prompts=prompts,
         source_ids=[f"qa:{record.remote_id}" for record in records],
     )
 
@@ -85,3 +93,31 @@ def _performed_item_category(record: SourceRecord) -> str:
     if "::" in title:
         return title.split("::", 1)[1].strip().split("::", 1)[0].strip()
     return "QA"
+
+
+def _performed_item_label(record: SourceRecord) -> str:
+    title = record.title or record.remote_id
+    parts = [part.strip() for part in title.split("::")]
+    if len(parts) >= 3:
+        return " :: ".join(parts[2:])
+    if len(parts) == 2:
+        return parts[1]
+    return title
+
+
+def _notable_prompts(records: list[SourceRecord]) -> list[str]:
+    prompts: list[str] = []
+    for record in records:
+        session = record.raw.get("session", {})
+        for comment in session.get("comments", []):
+            text = str(comment.get("comment", "")).strip()
+            if text:
+                prompts.append(text)
+        if record.status == "flagged":
+            prompts.append(f"Review flagged results for {record.title}")
+    if not prompts:
+        prompts.append("Review comments and flagged results")
+        prompts.append("Manually enter here")
+    else:
+        prompts.append("Manually enter here")
+    return prompts

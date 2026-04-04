@@ -33,8 +33,8 @@ def test_group_source_records_merges_linac_monthly_sessions() -> None:
     assert entry.title == "LA7 MQC"
     assert entry.source_ids == ["qa:13162", "qa:13167"]
     assert [item.label for item in entry.performed_items] == [
-        "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
-        "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 6 MV",
+        "Output and relative dosimetry :: 10 MV",
+        "Output and relative dosimetry :: 6 MV",
     ]
 
 
