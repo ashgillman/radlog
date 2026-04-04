@@ -59,3 +59,59 @@ def test_collect_qa_sessions_normalizes_session_records() -> None:
         "qa/testlistinstances",
         {"limit": "5", "ordering": "-work_completed", "created_by__username": "example-user"},
     )
+
+
+class EarlyStopClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def paginate(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        yield {
+            "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/200/",
+            "created": "2026-03-10T10:00:00+10:00",
+            "modified": "2026-03-10T10:00:00+10:00",
+            "work_started": "2026-03-10T09:00:00+10:00",
+            "work_completed": "2026-03-10T10:00:00+10:00",
+            "flagged": False,
+            "reviewed": "2026-03-10T12:00:00+10:00",
+            "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/206/",
+            "created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
+        }
+        yield {
+            "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/199/",
+            "created": "2026-02-28T10:00:00+10:00",
+            "modified": "2026-02-28T10:00:00+10:00",
+            "work_started": "2026-02-28T09:00:00+10:00",
+            "work_completed": "2026-02-28T10:00:00+10:00",
+            "flagged": False,
+            "reviewed": "2026-02-28T12:00:00+10:00",
+            "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/206/",
+            "created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
+        }
+        raise AssertionError("collector should have stopped before consuming older pages")
+
+    def get_json(self, endpoint: str, params: dict[str, str] | None = None):
+        if endpoint.endswith("/206/"):
+            return {
+                "name": "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
+                "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
+            }
+        if endpoint.endswith("/2/"):
+            return {"name": "LA7 - Hayman"}
+        raise AssertionError(endpoint)
+
+
+def test_collect_qa_sessions_stops_after_passing_start_date() -> None:
+    client = EarlyStopClient()
+
+    records = collect_qa_sessions(
+        client,
+        start="2026-03-01",
+        end="2026-03-31",
+        user="example-user",
+        extra_params={},
+    )
+
+    assert len(records) == 1
+    assert records[0].remote_id == "200"

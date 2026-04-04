@@ -1,7 +1,7 @@
 [radmachine]
 base_url = "https://radmachine.radformation.com"
-customer_id = "tcc"
-username = "gillmanas"
+customer_id = "<customer_id - based on your URL"
+username = "<your_username>"
 token_env = "RADMACHINE_TOKEN"
 
 [logbook]

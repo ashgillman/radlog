@@ -51,18 +51,8 @@
 
 * TODO CLI
 * TODO Emacs integration
-- [ ] Implement =radlog-import-radmachine=
-- [ ] Prompt for start date
-- [ ] Prompt for end date
-- [ ] Prompt for username or use default
-- [ ] Call Python CLI via =make-process= or =call-process=
-- [ ] Parse JSON output
-- [ ] Open one candidate at a time in review buffer
-- [ ] Provide keybindings:
-  - [ ] accept
-  - [ ] skip
-  - [ ] defer
-- [ ] Insert accepted entry into selected Org file/subtree
+- [ ] Prompt for unit when doing MQA-only imports to reduce slow broad fetches
+- [ ] Improve review buffer affordances and status feedback
 - [ ] Preserve point and window sanely
 
 * TODO Duplicate prevention

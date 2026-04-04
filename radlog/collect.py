@@ -18,6 +18,7 @@ def collect_qa_sessions(
 ) -> list[SourceRecord]:
     params = dict(extra_params or {})
     params.setdefault("ordering", "-work_completed")
+    descending_by_completion = params.get("ordering") == "-work_completed"
     if user:
         params.setdefault("created_by__username", user)
 
@@ -26,7 +27,9 @@ def collect_qa_sessions(
 
     for session in client.paginate("qa/testlistinstances", params=params):
         performed_at = session.get("work_completed") or session.get("work_started")
-        if start and (performed_at is None or performed_at[:10] < start):
+        if start and performed_at is not None and performed_at[:10] < start:
+            if descending_by_completion:
+                break
             continue
         if end and (performed_at is None or performed_at[:10] > end):
             continue
