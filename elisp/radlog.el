@@ -60,8 +60,8 @@ Each entry is of the form:
   "Start a RadMachine import for START, END, and USER."
   (interactive
    (list
-    (read-string "Start date (YYYY-MM-DD): ")
-    (read-string "End date (YYYY-MM-DD): ")
+    (radlog--read-date "Start date: ")
+    (radlog--read-date "End date: ")
     (read-string "Username: ")))
   (let* ((target-file (or radlog-target-file
                           (read-file-name "Target Org file: " nil nil nil nil
@@ -218,6 +218,10 @@ Return a cons cell of (FILE . ID)."
        (format "^:RM_GROUP_KEY: %s$" (regexp-quote group-key))
        nil
        t))))
+
+(defun radlog--read-date (prompt)
+  "Read a date with PROMPT using Org date input and return YYYY-MM-DD."
+  (org-read-date nil nil nil prompt nil nil nil))
 
 (defun radlog--project-root ()
   "Return the current radlog project root."
