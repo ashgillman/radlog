@@ -5,6 +5,7 @@
   :group 'tools)
 
 (require 'json)
+(require 'org-id)
 (require 'org)
 (require 'subr-x)
 
@@ -19,15 +20,23 @@
   :group 'radlog)
 
 (defcustom radlog-target-file nil
-  "Org file that accepted entries will be inserted into."
-  :type '(choice (const :tag "Prompt each time" nil) file)
+  "Fallback Org file that accepted entries will be inserted into."
+  :type '(choice (const :tag "Unset" nil) file)
   :group 'radlog)
 
 (defcustom radlog-target-heading nil
-  "Heading under which accepted entries will be inserted.
+  "Fallback heading under which accepted entries will be inserted.
 
 If nil, append to the end of `radlog-target-file'."
   :type '(choice (const :tag "Append to end of file" nil) string)
+  :group 'radlog)
+
+(defcustom radlog-destination-map nil
+  "Alist mapping entry types to insertion destinations.
+
+Each entry is of the form:
+  (ENTRY-TYPE :file \"/path/to/file.org\" :id \"ORG-ID\")"
+  :type '(alist :key-type string :value-type plist)
   :group 'radlog)
 
 (defvar radlog--candidate-queue nil)
@@ -35,7 +44,7 @@ If nil, append to the end of `radlog-target-file'."
 
 (defvar-local radlog--current-candidate nil)
 (defvar-local radlog--target-file nil)
-(defvar-local radlog--target-heading nil)
+(defvar-local radlog--target-id nil)
 
 (define-derived-mode radlog-review-mode org-mode "Radlog-Review"
   "Major mode for reviewing imported RadMachine entries."
@@ -58,14 +67,13 @@ If nil, append to the end of `radlog-target-file'."
                           (read-file-name "Target Org file: " nil nil nil nil
                                           (lambda (file)
                                             (string-suffix-p ".org" file)))))
-         (target-heading radlog-target-heading)
          (payload (radlog--run-cli start end user))
          (candidates (alist-get 'candidates payload)))
     (setq radlog--candidate-queue candidates)
     (setq radlog--deferred-candidates nil)
     (if (null candidates)
         (message "radlog: no candidates returned")
-      (radlog--show-next-candidate target-file target-heading))))
+      (radlog--show-next-candidate target-file))))
 
 (defun radlog-review-accept ()
   "Accept the current draft and insert it into the target Org file."
@@ -74,7 +82,8 @@ If nil, append to the end of `radlog-target-file'."
     (user-error "No current radlog candidate"))
   (radlog--insert-entry (buffer-substring-no-properties (point-min) (point-max))
                         radlog--target-file
-                        radlog--target-heading)
+                        radlog--target-id
+                        radlog--current-candidate)
   (radlog--advance-review "Accepted"))
 
 (defun radlog-review-skip ()
@@ -118,10 +127,13 @@ If nil, append to the end of `radlog-target-file'."
       (kill-buffer stdout)
       (ignore-errors (delete-file stderr-file)))))
 
-(defun radlog--show-next-candidate (target-file target-heading)
+(defun radlog--show-next-candidate (fallback-file)
   "Display the next candidate for review."
-  (if-let ((candidate (pop radlog--candidate-queue)))
-      (let ((buffer (get-buffer-create "*radlog-review*")))
+  (if-let* ((candidate (pop radlog--candidate-queue))
+            (destination (radlog--resolve-destination candidate fallback-file))
+            (buffer (get-buffer-create "*radlog-review*")))
+      (let ((target-file (car destination))
+            (target-id (cdr destination)))
         (with-current-buffer buffer
           (setq buffer-read-only nil)
           (erase-buffer)
@@ -131,7 +143,7 @@ If nil, append to the end of `radlog-target-file'."
           (radlog-review-mode)
           (setq-local radlog--current-candidate candidate)
           (setq-local radlog--target-file target-file)
-          (setq-local radlog--target-heading target-heading))
+          (setq-local radlog--target-id target-id))
         (pop-to-buffer buffer)
         (message "radlog: C-c C-c accept, C-c C-k skip, C-c C-d defer"))
     (when-let ((buffer (get-buffer "*radlog-review*")))
@@ -140,42 +152,72 @@ If nil, append to the end of `radlog-target-file'."
 
 (defun radlog--advance-review (action)
   "Advance to the next candidate after ACTION."
-  (let ((target-file radlog--target-file)
-        (target-heading radlog--target-heading))
+  (let ((target-file radlog--target-file))
     (when-let ((buffer (current-buffer)))
       (kill-buffer buffer))
     (message "radlog: %s" action)
-    (radlog--show-next-candidate target-file target-heading)))
+    (radlog--show-next-candidate target-file)))
 
-(defun radlog--insert-entry (text target-file target-heading)
-  "Insert TEXT into TARGET-FILE, optionally under TARGET-HEADING."
+(defun radlog--insert-entry (text target-file target-id candidate)
+  "Insert TEXT into TARGET-FILE under TARGET-ID for CANDIDATE."
   (let ((buffer (find-file-noselect target-file)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'org-mode)
         (org-mode))
+      (when (radlog--duplicate-group-key-p (alist-get 'group_key candidate))
+        (unless (y-or-n-p
+                 (format "radlog duplicate detected for %s in %s. Insert anyway? "
+                         (alist-get 'group_key candidate)
+                         (abbreviate-file-name target-file)))
+          (user-error "radlog insertion cancelled for duplicate %s"
+                      (alist-get 'group_key candidate))))
       (save-excursion
-        (goto-char (point-min))
-        (if target-heading
-            (radlog--goto-or-create-heading target-heading)
-          (goto-char (point-max)))
+        (radlog--goto-id target-id)
+        (org-end-of-subtree t t)
         (unless (bolp)
           (insert "\n"))
         (insert text)
         (unless (string-suffix-p "\n" text)
           (insert "\n")))
-      (save-buffer))
-    (pop-to-buffer buffer)))
+      (save-buffer))))
 
-(defun radlog--goto-or-create-heading (heading)
-  "Move point to the end of HEADING, creating it if needed."
-  (goto-char (point-min))
-  (if (re-search-forward (format "^\\*+ %s$" (regexp-quote heading)) nil t)
-      (org-end-of-subtree t t)
-    (goto-char (point-max))
-    (unless (bolp)
-      (insert "\n"))
-    (insert "* " heading "\n")
-    (point-max)))
+(defun radlog--resolve-destination (candidate fallback-file)
+  "Resolve insertion destination for CANDIDATE.
+
+Return a cons cell of (FILE . ID)."
+  (let* ((entry-type (alist-get 'entry_type candidate))
+         (route (cdr (assoc entry-type radlog-destination-map)))
+         (file (plist-get route :file))
+         (id (plist-get route :id)))
+    (cond
+     ((and file id)
+      (cons file id))
+     ((and fallback-file radlog-target-heading)
+      (user-error
+       "radlog destination for %s must be configured with `radlog-destination-map' using :file and :id"
+       entry-type))
+     (t
+      (user-error
+       "radlog destination for %s is not configured; set `radlog-destination-map' with :file and :id"
+       entry-type)))))
+
+(defun radlog--goto-id (id)
+  "Move point to the Org heading identified by ID."
+  (let ((location (org-id-find id t)))
+    (unless location
+      (user-error "radlog could not find Org ID %s" id))
+    (goto-char location)
+    (org-back-to-heading t)))
+
+(defun radlog--duplicate-group-key-p (group-key)
+  "Return non-nil if GROUP-KEY already exists in the current buffer."
+  (when group-key
+    (save-excursion
+      (goto-char (point-min))
+      (re-search-forward
+       (format "^:RM_GROUP_KEY: %s$" (regexp-quote group-key))
+       nil
+       t))))
 
 (defun radlog--project-root ()
   "Return the current radlog project root."

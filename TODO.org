@@ -37,7 +37,8 @@
 
 * TODO Grouping
 - [ ] Decide when same-day items should merge vs split
-- [ ] Merge performed items within a candidate entry
+- [ ] Merge performed items within a candidate entry into authored summaries, not raw sub-tests
+- [ ] Revisit why some sessions already in RadMachine's monthly list are not being classified/grouped into =linac_mqc=
 - [ ] Surface tolerance/action/flagged items separately
 - [ ] Expand grouping tests beyond the initial monthly-QA cases
 
@@ -47,20 +48,23 @@
 - [ ] Implement Org renderer for =service_event=
 - [ ] Implement Org renderer for =fault=
 - [ ] Add prompt scaffolding for “Notable events”
+- [ ] Collapse raw RadMachine subtests into authored MQA item summaries
+- [ ] Deduplicate repeated comments and low-value prompts in rendered MQA output
+- [ ] Decide whether =RM_GROUP_KEY= / =RM_SOURCE_IDS= should stay visible in the inserted entry or be hidden elsewhere
 - [ ] Add renderer tests after the initial Org shape settles
 
 * TODO CLI
 * TODO Emacs integration
+- [ ] Use Org-style date picker/input for start and end dates instead of plain string prompts
 - [ ] Prompt for unit when doing MQA-only imports to reduce slow broad fetches
 - [ ] Improve review buffer affordances and status feedback
+- [ ] Route entries by =entry_type= to Org destinations configured by file + Org ID
+- [ ] Confirm duplicate override prompt reliably appears from the review buffer
 - [ ] Preserve point and window sanely
 
 * TODO Duplicate prevention
-- [ ] Add =RM_GROUP_KEY= property to inserted entries
-- [ ] Add =RM_SOURCE_IDS= property to inserted entries
-- [ ] Search current logbook for existing =RM_GROUP_KEY=
 - [ ] Decide behaviour on duplicate:
-  - [ ] skip
+  - [ ] keep hard error
   - [ ] prompt to replace
   - [ ] prompt to insert anyway
 
