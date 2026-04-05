@@ -19,6 +19,11 @@
   :type 'file
   :group 'radlog)
 
+(defcustom radlog-default-user nil
+  "Default username passed to the radlog CLI."
+  :type '(choice (const :tag "Prompt each time" nil) string)
+  :group 'radlog)
+
 (defcustom radlog-target-file nil
   "Fallback Org file that accepted entries will be inserted into."
   :type '(choice (const :tag "Unset" nil) file)
@@ -35,21 +40,30 @@ If nil, append to the end of `radlog-target-file'."
   "Alist mapping entry types to insertion destinations.
 
 Each entry is of the form:
-  (ENTRY-TYPE :file \"/path/to/file.org\" :id \"ORG-ID\")"
+  (ENTRY-TYPE :file \"/path/to/file.org\" :id \"ORG-ID\")
+
+ENTRY-TYPE may also be the string \"default\" to provide a catch-all route
+for candidates whose specific `entry_type' is not mapped."
   :type '(alist :key-type string :value-type plist)
   :group 'radlog)
 
 (defvar radlog--candidate-queue nil)
 (defvar radlog--deferred-candidates nil)
+(defvar radlog--total-candidates 0)
+(defvar radlog--current-candidate-index 0)
 
 (defvar-local radlog--current-candidate nil)
 (defvar-local radlog--target-file nil)
 (defvar-local radlog--target-id nil)
+(defvar-local radlog--draft-start-marker nil)
+(defvar-local radlog--draft-end-marker nil)
 
 (define-derived-mode radlog-review-mode org-mode "Radlog-Review"
   "Major mode for reviewing imported RadMachine entries."
   (setq-local header-line-format
-              "radlog review: C-c C-c accept  C-c C-k skip  C-c C-d defer"))
+              (format "radlog review %d/%d: C-c C-c keep  C-c C-k remove  C-c C-d defer"
+                      radlog--current-candidate-index
+                      radlog--total-candidates)))
 
 (define-key radlog-review-mode-map (kbd "C-c C-c") #'radlog-review-accept)
 (define-key radlog-review-mode-map (kbd "C-c C-k") #'radlog-review-skip)
@@ -62,7 +76,7 @@ Each entry is of the form:
    (list
     (radlog--read-date "Start date: ")
     (radlog--read-date "End date: ")
-    (read-string "Username: ")))
+    (read-string "Username: " radlog-default-user)))
   (let* ((target-file (or radlog-target-file
                           (read-file-name "Target Org file: " nil nil nil nil
                                           (lambda (file)
@@ -71,35 +85,36 @@ Each entry is of the form:
          (candidates (alist-get 'candidates payload)))
     (setq radlog--candidate-queue candidates)
     (setq radlog--deferred-candidates nil)
+    (setq radlog--total-candidates (length candidates))
+    (setq radlog--current-candidate-index 0)
     (if (null candidates)
         (message "radlog: no candidates returned")
       (radlog--show-next-candidate target-file))))
 
 (defun radlog-review-accept ()
-  "Accept the current draft and insert it into the target Org file."
+  "Keep the current in-place draft and move to the next candidate."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
-  (radlog--insert-entry (buffer-substring-no-properties (point-min) (point-max))
-                        radlog--target-file
-                        radlog--target-id
-                        radlog--current-candidate)
-  (radlog--advance-review "Accepted"))
+  (save-buffer)
+  (radlog--advance-review "Kept" (current-buffer) radlog--target-file))
 
 (defun radlog-review-skip ()
-  "Skip the current candidate."
+  "Remove the current in-place draft and move to the next candidate."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
-  (radlog--advance-review "Skipped"))
+  (radlog--remove-current-draft)
+  (radlog--advance-review "Skipped" (current-buffer) radlog--target-file))
 
 (defun radlog-review-defer ()
-  "Defer the current candidate for later."
+  "Remove the current in-place draft and defer the candidate for later."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
   (push radlog--current-candidate radlog--deferred-candidates)
-  (radlog--advance-review "Deferred"))
+  (radlog--remove-current-draft)
+  (radlog--advance-review "Deferred" (current-buffer) radlog--target-file))
 
 (defun radlog--run-cli (start end user)
   "Run the radlog CLI for START, END, and USER and return parsed JSON."
@@ -128,65 +143,99 @@ Each entry is of the form:
       (ignore-errors (delete-file stderr-file)))))
 
 (defun radlog--show-next-candidate (fallback-file)
-  "Display the next candidate for review."
+  "Insert the next candidate into its target Org buffer for in-place review."
   (if-let* ((candidate (pop radlog--candidate-queue))
             (destination (radlog--resolve-destination candidate fallback-file))
-            (buffer (get-buffer-create "*radlog-review*")))
-      (let ((target-file (car destination))
-            (target-id (cdr destination)))
-        (with-current-buffer buffer
-          (setq buffer-read-only nil)
-          (erase-buffer)
-          (insert (or (alist-get 'rendered_org candidate)
-                      (format "%S" candidate)))
-          (goto-char (point-min))
+            (target-file (car destination))
+            (target-id (cdr destination))
+            (buffer (find-file-noselect target-file)))
+      (with-current-buffer buffer
+        (setq radlog--current-candidate-index
+              (1+ radlog--current-candidate-index))
+        (unless (derived-mode-p 'org-mode)
+          (org-mode))
+        (when (radlog--duplicate-group-key-p (alist-get 'group_key candidate))
+          (unless (y-or-n-p
+                   (format "radlog duplicate detected for %s in %s. Insert anyway? "
+                           (alist-get 'group_key candidate)
+                           (abbreviate-file-name target-file)))
+            (user-error "radlog insertion cancelled for duplicate %s"
+                        (alist-get 'group_key candidate))))
+        (widen)
+        (let ((text (or (alist-get 'rendered_org candidate)
+                        (format "%S" candidate)))
+              start
+              end)
+          (save-excursion
+            (radlog--goto-id target-id)
+            (org-end-of-subtree t t)
+            (unless (bolp)
+              (insert "\n"))
+            (setq start (point))
+            (insert text)
+            (unless (string-suffix-p "\n" text)
+              (insert "\n"))
+            (setq end (point)))
           (radlog-review-mode)
           (setq-local radlog--current-candidate candidate)
           (setq-local radlog--target-file target-file)
-          (setq-local radlog--target-id target-id))
-        (pop-to-buffer buffer)
-        (message "radlog: C-c C-c accept, C-c C-k skip, C-c C-d defer"))
-    (when-let ((buffer (get-buffer "*radlog-review*")))
-      (kill-buffer buffer))
+          (setq-local radlog--target-id target-id)
+          (setq-local radlog--draft-start-marker (copy-marker start))
+          (setq-local radlog--draft-end-marker (copy-marker end t))
+          (narrow-to-region start end)
+          (goto-char (point-min))
+          (pop-to-buffer buffer)
+          (message "radlog: C-c C-c keep, C-c C-k remove, C-c C-d defer")))
     (message "radlog complete: %d deferred" (length radlog--deferred-candidates))))
 
-(defun radlog--advance-review (action)
-  "Advance to the next candidate after ACTION."
-  (let ((target-file radlog--target-file))
-    (when-let ((buffer (current-buffer)))
-      (kill-buffer buffer))
-    (message "radlog: %s" action)
-    (radlog--show-next-candidate target-file)))
+(defun radlog--advance-review (action review-buffer fallback-file)
+  "Advance to the next candidate after ACTION.
 
-(defun radlog--insert-entry (text target-file target-id candidate)
-  "Insert TEXT into TARGET-FILE under TARGET-ID for CANDIDATE."
-  (let ((buffer (find-file-noselect target-file)))
-    (with-current-buffer buffer
-      (unless (derived-mode-p 'org-mode)
-        (org-mode))
-      (when (radlog--duplicate-group-key-p (alist-get 'group_key candidate))
-        (unless (y-or-n-p
-                 (format "radlog duplicate detected for %s in %s. Insert anyway? "
-                         (alist-get 'group_key candidate)
-                         (abbreviate-file-name target-file)))
-          (user-error "radlog insertion cancelled for duplicate %s"
-                      (alist-get 'group_key candidate))))
-      (save-excursion
-        (radlog--goto-id target-id)
-        (org-end-of-subtree t t)
-        (unless (bolp)
-          (insert "\n"))
-        (insert text)
-        (unless (string-suffix-p "\n" text)
-          (insert "\n")))
-      (save-buffer))))
+REVIEW-BUFFER is the buffer to close. FALLBACK-FILE is kept for destination
+resolution."
+  (when (buffer-live-p review-buffer)
+    (with-current-buffer review-buffer
+      (radlog--clear-review-state)))
+  (message "radlog: %s" action)
+  (condition-case err
+      (radlog--show-next-candidate fallback-file)
+    (error
+     (user-error "radlog stopped while opening the next candidate: %s"
+                 (error-message-string err)))))
+
+(defun radlog--remove-current-draft ()
+  "Delete the current in-place draft from the buffer and save."
+  (unless (and radlog--draft-start-marker radlog--draft-end-marker)
+    (user-error "No current radlog draft markers"))
+  (let ((inhibit-read-only t)
+        (start (marker-position radlog--draft-start-marker))
+        (end (marker-position radlog--draft-end-marker)))
+    (widen)
+    (delete-region start end)
+    (save-buffer)))
+
+(defun radlog--clear-review-state ()
+  "Restore the current buffer after an in-place radlog review step."
+  (widen)
+  (setq header-line-format nil)
+  (setq-local radlog--current-candidate nil)
+  (setq-local radlog--target-file nil)
+  (setq-local radlog--target-id nil)
+  (when radlog--draft-start-marker
+    (set-marker radlog--draft-start-marker nil))
+  (when radlog--draft-end-marker
+    (set-marker radlog--draft-end-marker nil))
+  (setq-local radlog--draft-start-marker nil)
+  (setq-local radlog--draft-end-marker nil)
+  (org-mode))
 
 (defun radlog--resolve-destination (candidate fallback-file)
   "Resolve insertion destination for CANDIDATE.
 
 Return a cons cell of (FILE . ID)."
   (let* ((entry-type (alist-get 'entry_type candidate))
-         (route (cdr (assoc entry-type radlog-destination-map)))
+         (route (or (cdr (assoc entry-type radlog-destination-map))
+                    (cdr (assoc "default" radlog-destination-map))))
          (file (plist-get route :file))
          (id (plist-get route :id)))
     (cond
@@ -194,11 +243,11 @@ Return a cons cell of (FILE . ID)."
       (cons file id))
      ((and fallback-file radlog-target-heading)
       (user-error
-       "radlog destination for %s must be configured with `radlog-destination-map' using :file and :id"
+       "radlog destination for %s must be configured with `radlog-destination-map' using :file and :id, or add a \"default\" route"
        entry-type))
      (t
       (user-error
-       "radlog destination for %s is not configured; set `radlog-destination-map' with :file and :id"
+       "radlog destination for %s is not configured; set `radlog-destination-map' with :file and :id, or add a \"default\" route"
        entry-type)))))
 
 (defun radlog--goto-id (id)
