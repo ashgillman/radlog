@@ -43,10 +43,34 @@ def _record_sort_key(record: SourceRecord) -> tuple[str, str, str]:
 
 
 def _infer_entry_type(record: SourceRecord) -> str:
-    title = (record.title or "").lower()
-    if title.startswith("linac monthly ::"):
+    equipment = _equipment_group(record)
+    frequency = _collection_frequency_name(record)
+    if equipment == "linac" and frequency == "monthly":
         return "linac_mqc"
     return "qa_session"
+
+
+def _equipment_group(record: SourceRecord) -> str | None:
+    unit = record.unit or ""
+    if unit.startswith("LA"):
+        return "linac"
+    return None
+
+
+def _collection_frequency_name(record: SourceRecord) -> str | None:
+    collection = record.raw.get("unit_test_collection", {})
+    if not isinstance(collection, dict):
+        return None
+
+    frequency = collection.get("frequency")
+    if not isinstance(frequency, str):
+        return None
+
+    frequency_id = frequency.rstrip("/").rsplit("/", 1)[-1]
+    if frequency_id == "3":
+        return "monthly"
+
+    return None
 
 
 def _group_label(record: SourceRecord, entry_type: str) -> str:
@@ -90,9 +114,7 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
 
 def _performed_item_category(record: SourceRecord) -> str:
     title = record.title or ""
-    if "::" in title:
-        return title.split("::", 1)[1].strip().split("::", 1)[0].strip()
-    return "QA"
+    return title or "QA"
 
 
 def _performed_item_label(record: SourceRecord) -> str:
