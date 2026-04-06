@@ -149,7 +149,7 @@ def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -
     assert linac_entry.group_key == "2026-03-30_LA7_linac_monthly"
     assert linac_entry.source_ids == ["qa:13452", "qa:13460", "qa:13465"]
     assert [(item.category, item.label) for item in linac_entry.performed_items] == [
-        ("Imaging", "SFOV CW"),
+        ("Imaging", "CatPhan 503 (SFOV CW)"),
         ("Winston Lutz", "6 MV"),
         ("EPID Image Quality", "Contrast visibility"),
     ]
@@ -186,4 +186,164 @@ def test_group_source_records_avoids_duplicate_monthly_item_names() -> None:
     assert [(item.category, item.label) for item in entry.performed_items] == [
         ("Mechanical", "Machine mechanical measurements"),
         ("Safety and Functionality", "Mechanical drive and interlocks"),
+    ]
+
+
+def test_group_source_records_collapses_linac_monthly_items_into_authored_summary() -> None:
+    monthly_frequency = "https://radmachine.radformation.com/tcc/api/qa/frequencies/3/"
+    records = [
+        _record(
+            "13446",
+            "2026-03-30T07:46:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Imaging :: CatPhan 503 :: MFOV CCW",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13452",
+            "2026-03-30T08:00:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Imaging :: CatPhan 503 :: SFOV CW",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13454",
+            "2026-03-30T08:03:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Imaging :: CatPhan 503 :: SFOV CCW",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13455",
+            "2026-03-30T08:05:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Imaging :: CatPhan 503 :: MFOV CW",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13462",
+            "2026-03-30T11:26:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Mechanical",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13463",
+            "2026-03-30T11:28:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Safety and Functionality",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13464",
+            "2026-03-30T11:39:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Geometry :: Jaw drive accuracy",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13466",
+            "2026-03-30T11:55:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Geometry :: EPID scaling",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13467",
+            "2026-03-30T12:18:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Geometry :: Light vs radiation",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13469",
+            "2026-03-30T12:52:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Leaf speed constancy",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13470",
+            "2026-03-30T12:56:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Sliding window fluence uniformity",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13471",
+            "2026-03-30T13:04:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: VMAT Dose Rate & Gantry Speed (DRGS) + Dynamic MLC Picket Fence",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13472",
+            "2026-03-30T13:08:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to G :: Gantry 0",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13473",
+            "2026-03-30T13:10:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to G :: Gantry 270",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13474",
+            "2026-03-30T13:12:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to G :: Gantry 90",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13475",
+            "2026-03-30T13:15:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to T :: Gantry 0",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13476",
+            "2026-03-30T13:16:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to T :: Gantry 270",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13477",
+            "2026-03-30T13:18:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: MLC :: Picket Fence :: Panel to T :: Gantry 90",
+            frequency=monthly_frequency,
+        ),
+    ]
+
+    entry = group_source_records(records)[0]
+
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("Imaging", "CatPhan 503 (MFOV+SFOV x CW+CCW)"),
+        ("Mechanical", "Machine mechanical measurements"),
+        ("Safety and Functionality", "Mechanical drive and interlocks"),
+        ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
+        ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
     ]

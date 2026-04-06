@@ -6,7 +6,12 @@ from dataclasses import asdict
 
 from .models import CandidateEntry, PerformedItem, SourceRecord
 from .render import render_candidate
-from .site_rules import collection_frequency_name, equipment_group, map_performed_item
+from .site_rules import (
+    aggregate_performed_items,
+    collection_frequency_name,
+    equipment_group,
+    map_performed_item,
+)
 
 
 def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
@@ -69,7 +74,10 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         title = first.title or f"{unit} QA"
         tags = [tag for tag in (site, unit) if tag]
 
-    performed_items = [map_performed_item(record, entry_type) for record in records]
+    performed_items = aggregate_performed_items(
+        entry_type,
+        [map_performed_item(record, entry_type) for record in records],
+    )
 
     prompts = _notable_prompts(records)
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from radlog.models import SourceRecord
-from radlog.site_rules import map_performed_item
+from radlog.models import PerformedItem
+from radlog.site_rules import aggregate_performed_items, map_performed_item
 
 
 def _record(title: str) -> SourceRecord:
@@ -40,3 +41,30 @@ def test_map_performed_item_preserves_generic_titles_outside_linac_mqc() -> None
 
     assert item.category == "QA"
     assert item.label == "Quickcheck Data Download"
+
+
+def test_aggregate_performed_items_collapses_linac_mqc_summary_lines() -> None:
+    items = [
+        PerformedItem(category="Imaging", label="MFOV CCW"),
+        PerformedItem(category="Imaging", label="SFOV CW"),
+        PerformedItem(category="Imaging", label="SFOV CCW"),
+        PerformedItem(category="Imaging", label="MFOV CW"),
+        PerformedItem(category="Mechanical", label="Machine mechanical measurements"),
+        PerformedItem(category="Safety and Functionality", label="Mechanical drive and interlocks"),
+        PerformedItem(category="Geometry", label="EPID scaling"),
+        PerformedItem(category="Geometry", label="Light vs radiation"),
+        PerformedItem(category="Geometry", label="Jaw drive accuracy"),
+        PerformedItem(category="MLC", label="Leaf speed constancy"),
+        PerformedItem(category="MLC", label="Sliding window fluence uniformity"),
+        PerformedItem(category="MLC", label="Picket Fence: Gantry 270 Panel to G"),
+    ]
+
+    summary = aggregate_performed_items("linac_mqc", items)
+
+    assert [(item.category, item.label) for item in summary] == [
+        ("Imaging", "CatPhan 503 (MFOV+SFOV x CW+CCW)"),
+        ("Mechanical", "Machine mechanical measurements"),
+        ("Safety and Functionality", "Mechanical drive and interlocks"),
+        ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
+        ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
+    ]
