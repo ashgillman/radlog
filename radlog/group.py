@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from .models import CandidateEntry, PerformedItem, SourceRecord
 from .render import render_candidate
+from .site_rules import collection_frequency_name, equipment_group, map_performed_item
 
 
 def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
@@ -43,34 +44,11 @@ def _record_sort_key(record: SourceRecord) -> tuple[str, str, str]:
 
 
 def _infer_entry_type(record: SourceRecord) -> str:
-    equipment = _equipment_group(record)
-    frequency = _collection_frequency_name(record)
+    equipment = equipment_group(record)
+    frequency = collection_frequency_name(record)
     if equipment == "linac" and frequency == "monthly":
         return "linac_mqc"
     return "qa_session"
-
-
-def _equipment_group(record: SourceRecord) -> str | None:
-    unit = record.unit or ""
-    if unit.startswith("LA"):
-        return "linac"
-    return None
-
-
-def _collection_frequency_name(record: SourceRecord) -> str | None:
-    collection = record.raw.get("unit_test_collection", {})
-    if not isinstance(collection, dict):
-        return None
-
-    frequency = collection.get("frequency")
-    if not isinstance(frequency, str):
-        return None
-
-    frequency_id = frequency.rstrip("/").rsplit("/", 1)[-1]
-    if frequency_id == "3":
-        return "monthly"
-
-    return None
 
 
 def _group_label(record: SourceRecord, entry_type: str) -> str:
@@ -91,10 +69,7 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         title = first.title or f"{unit} QA"
         tags = [tag for tag in (site, unit) if tag]
 
-    performed_items = [
-        PerformedItem(category=_performed_item_category(record), label=_performed_item_label(record))
-        for record in records
-    ]
+    performed_items = [map_performed_item(record, entry_type) for record in records]
 
     prompts = _notable_prompts(records)
 
@@ -110,21 +85,6 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         notable_prompts=prompts,
         source_ids=[f"qa:{record.remote_id}" for record in records],
     )
-
-
-def _performed_item_category(record: SourceRecord) -> str:
-    title = record.title or ""
-    return title or "QA"
-
-
-def _performed_item_label(record: SourceRecord) -> str:
-    title = record.title or record.remote_id
-    parts = [part.strip() for part in title.split("::")]
-    if len(parts) >= 3:
-        return " :: ".join(parts[2:])
-    if len(parts) == 2:
-        return parts[1]
-    return title
 
 
 def _notable_prompts(records: list[SourceRecord]) -> list[str]:

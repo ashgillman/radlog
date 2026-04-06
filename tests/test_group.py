@@ -149,9 +149,9 @@ def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -
     assert linac_entry.group_key == "2026-03-30_LA7_linac_monthly"
     assert linac_entry.source_ids == ["qa:13452", "qa:13460", "qa:13465"]
     assert [(item.category, item.label) for item in linac_entry.performed_items] == [
-        ("Linac Monthly :: Imaging :: CatPhan 503 :: SFOV CW", "CatPhan 503 :: SFOV CW"),
-        ("Winston Lutz :: eQA :: 6 MV", "6 MV"),
-        ("EPID image quality (PTW EPID QC)", "EPID image quality (PTW EPID QC)"),
+        ("Imaging", "SFOV CW"),
+        ("Winston Lutz", "6 MV"),
+        ("EPID Image Quality", "Contrast visibility"),
     ]
     assert {entry.title for entry in entries if entry.entry_type == "qa_session"} == {
         "ABC Weekly QC",
@@ -184,6 +184,6 @@ def test_group_source_records_avoids_duplicate_monthly_item_names() -> None:
 
     entry = next(entry for entry in entries if entry.entry_type == "linac_mqc")
     assert [(item.category, item.label) for item in entry.performed_items] == [
-        ("Linac Monthly :: Mechanical", "Mechanical"),
-        ("Linac Monthly :: Safety and Functionality", "Safety and Functionality"),
+        ("Mechanical", "Machine mechanical measurements"),
+        ("Safety and Functionality", "Mechanical drive and interlocks"),
     ]
