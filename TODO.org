@@ -18,7 +18,6 @@
 - [ ] Preserve raw payload snapshots in normalized models for debugging
 
 * TODO Classification
-- [ ] Write classifier for post-PMI QA
 - [ ] Write classifier for annual QA
 - [ ] Write classifier for CT monthly QA
 - [ ] Write classifier for service events
@@ -28,17 +27,13 @@
 
 * TODO Grouping
 - [ ] Decide when same-day items should merge vs split
-- [ ] Merge performed items within a candidate entry into authored summaries, not raw sub-tests
 - [ ] Surface tolerance/action/flagged items separately
 - [ ] Expand grouping tests beyond the initial monthly-QA cases
 
 * TODO Rendering
-- [ ] Implement Org renderer for =post_pmi=
 - [ ] Implement Org renderer for =ct_monthly=
 - [ ] Implement Org renderer for =service_event=
 - [ ] Implement Org renderer for =fault=
-- [ ] Add prompt scaffolding for “Notable events”
-- [ ] Collapse raw RadMachine subtests into authored MQA item summaries
 - [ ] Deduplicate repeated comments and low-value prompts in rendered MQA output
 - [ ] Decide whether =RM_GROUP_KEY= / =RM_SOURCE_IDS= should stay visible in the inserted entry or be hidden elsewhere
 - [ ] Add renderer tests after the initial Org shape settles
