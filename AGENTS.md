@@ -657,7 +657,7 @@ A reasonable v0 milestone is:
 - Python CLI accepts start/end/user
 - returns mocked or real grouped JSON
 - Emacs command reviews candidates one-by-one
-- accepted drafts insert into an Org file
+- accepted drafts are inserted into the target Org subtree
 - imported entries carry =RM_GROUP_KEY= and =RM_SOURCE_IDS=
 
 If that works, the architecture is sound. If it does not, the rest was fantasy.
