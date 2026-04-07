@@ -68,3 +68,31 @@ def test_aggregate_performed_items_collapses_linac_mqc_summary_lines() -> None:
         ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
         ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
     ]
+
+
+def test_aggregate_performed_items_collapses_post_pmi_dosimetry_summary_lines() -> None:
+    items = [
+        PerformedItem(category="Safety and Functionality", label="Mechanical drive and interlocks"),
+        PerformedItem(category="MLC", label="Leaf speed constancy"),
+        PerformedItem(category="MLC", label="Sliding window fluence uniformity"),
+        PerformedItem(category="MLC", label="Picket Fence: Gantry 270 Panel to G"),
+        PerformedItem(category="Dosimetry", label="Photon profile constancy"),
+        PerformedItem(category="Dosimetry", label="Electron profile constancy"),
+        PerformedItem(category="Dosimetry", label="Output and energy constancy :: 15 MeV"),
+        PerformedItem(category="Dosimetry", label="Output and energy constancy :: 12 MeV"),
+        PerformedItem(category="Dosimetry", label="Output and energy constancy :: 10 MeV"),
+        PerformedItem(category="Dosimetry", label="Output and energy constancy :: 8 MeV"),
+        PerformedItem(category="Dosimetry", label="Output and energy constancy :: 6 MeV"),
+        PerformedItem(category="Dosimetry", label="Output and relative dosimetry :: 6 MV"),
+        PerformedItem(category="Dosimetry", label="Output and relative dosimetry :: 10 MV"),
+        PerformedItem(category="Dosimetry", label="Quickcheck Constancy"),
+    ]
+
+    summary = aggregate_performed_items("post_pmi", items)
+
+    assert [(item.category, item.label) for item in summary] == [
+        ("Safety and Functionality", "Mechanical drive and interlocks"),
+        ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
+        ("Dosimetry", "Photon and electron profile, output and energy constancy, all energies"),
+        ("Dosimetry", "Quickcheck Constancy"),
+    ]

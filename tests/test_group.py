@@ -347,3 +347,141 @@ def test_group_source_records_collapses_linac_monthly_items_into_authored_summar
         ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
         ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
     ]
+
+
+def test_group_source_records_promotes_monthly_linac_to_post_pmi_when_full_dosimetry_is_present() -> None:
+    monthly_frequency = "https://radmachine.radformation.com/tcc/api/qa/frequencies/3/"
+    records = [
+        _record(
+            "13162",
+            "2026-03-06T10:10:58+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13167",
+            "2026-03-06T11:04:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 6 MV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13168",
+            "2026-03-06T11:14:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and energy constancy :: 6 MeV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13169",
+            "2026-03-06T11:24:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and energy constancy :: 8 MeV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13172",
+            "2026-03-06T11:26:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and energy constancy :: 10 MeV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13173",
+            "2026-03-06T11:28:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and energy constancy :: 12 MeV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13174",
+            "2026-03-06T11:30:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Output and energy constancy :: 15 MeV",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13175",
+            "2026-03-06T11:32:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Photon profile constancy",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "13176",
+            "2026-03-06T11:33:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Electron profile constancy",
+            frequency=monthly_frequency,
+        ),
+        SourceRecord(
+            source_type="qa_session",
+            remote_id="13170",
+            performed_at="2026-03-06T11:34:55+10:00",
+            unit="LA7",
+            site="Hayman",
+            title="Linac Monthly :: MLC :: Picket Fence :: Panel to G :: Gantry 270",
+            raw={
+                "unit_test_collection": {
+                    "frequency": monthly_frequency,
+                },
+                "session": {
+                    "comments": [
+                        {"comment": "Peripheral leaf flagging tol, not clinically of high relevance"}
+                    ]
+                },
+            },
+        ),
+        _record(
+            "13177",
+            "2026-03-06T11:36:55+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Dosimetry :: Quickcheck Constancy",
+            frequency=monthly_frequency,
+        ),
+        SourceRecord(
+            source_type="qa_session",
+            remote_id="13171",
+            performed_at="2026-03-06T11:44:55+10:00",
+            unit="LA7",
+            site="Hayman",
+            title="Linac Monthly :: Dosimetry :: Photon profile constancy",
+            raw={
+                "unit_test_collection": {
+                    "frequency": monthly_frequency,
+                },
+                "session": {
+                    "comments": [
+                        {
+                            "comment": "Discussed results with AB. Both 6X and 10X symmetry are fair laterally."
+                        }
+                    ]
+                },
+            },
+        ),
+    ]
+
+    entry = group_source_records(records)[0]
+
+    assert entry.entry_type == "post_pmi"
+    assert entry.group_key == "2026-03-06_LA7_post_pmi"
+    assert entry.title == "LA7 post-PMI"
+    assert "Linac ready for clinical use. Re-enable energies and document on MOSAIQ." in entry.notable_prompts
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("MLC", "Picket fence by gantry angle"),
+        ("Dosimetry", "Photon and electron profile, output and energy constancy, all energies"),
+        ("Dosimetry", "Quickcheck Constancy"),
+    ]
+    assert "Photon profile constancy\n  - Discussed results with AB. Both 6X and 10X symmetry are fair laterally." in entry.notable_prompts
+    assert "Picket Fence: Gantry 270 Panel to G\n  - Peripheral leaf flagging tol, not clinically of high relevance" in entry.notable_prompts

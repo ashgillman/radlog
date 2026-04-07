@@ -36,9 +36,25 @@ def collection_frequency_name(record: SourceRecord) -> str | None:
     return None
 
 
+def resolve_entry_type(entry_type: str, records: Iterable[SourceRecord]) -> str:
+    """Apply site-specific entry type overrides after grouping."""
+    record_list = list(records)
+    if entry_type == "linac_mqc" and _looks_like_post_pmi(record_list):
+        return "post_pmi"
+    return entry_type
+
+
+def additional_notable_prompts(entry_type: str, records: Iterable[SourceRecord]) -> list[str]:
+    """Return extra site-specific prompt lines for a grouped entry."""
+    _ = list(records)
+    if entry_type == "post_pmi":
+        return ["Linac ready for clinical use. Re-enable energies and document on MOSAIQ."]
+    return []
+
+
 def map_performed_item(record: SourceRecord, entry_type: str) -> PerformedItem:
     """Map a source record to the displayed performed-item text."""
-    if entry_type == "linac_mqc":
+    if entry_type in {"linac_mqc", "post_pmi"}:
         return _map_linac_mqc_performed_item(record)
 
     title = record.title or record.remote_id
@@ -50,6 +66,8 @@ def aggregate_performed_items(entry_type: str, items: Iterable[PerformedItem]) -
     item_list = list(items)
     if entry_type == "linac_mqc":
         return _aggregate_linac_mqc_items(item_list)
+    if entry_type == "post_pmi":
+        return _aggregate_post_pmi_items(item_list)
     return item_list
 
 
@@ -171,6 +189,51 @@ def _aggregate_linac_mqc_items(items: list[PerformedItem]) -> list[PerformedItem
     return grouped
 
 
+def _aggregate_post_pmi_items(items: list[PerformedItem]) -> list[PerformedItem]:
+    grouped: list[PerformedItem] = []
+    handled: set[tuple[str, str]] = set()
+
+    if any(item.category == "Safety and Functionality" for item in items):
+        grouped.append(
+            PerformedItem(category="Safety and Functionality", label="Mechanical drive and interlocks")
+        )
+        handled.update(
+            {(item.category, item.label) for item in items if item.category == "Safety and Functionality"}
+        )
+
+    mlc_labels = {item.label for item in items if item.category == "MLC"}
+    if mlc_labels:
+        grouped.append(PerformedItem(category="MLC", label=_summarize_mlc_items(mlc_labels)))
+        handled.update({("MLC", label) for label in mlc_labels})
+
+    dosimetry_labels = {item.label for item in items if item.category == "Dosimetry"}
+    if dosimetry_labels:
+        if _has_full_post_pmi_dosimetry(dosimetry_labels):
+            grouped.append(
+                PerformedItem(
+                    category="Dosimetry",
+                    label="Photon and electron profile, output and energy constancy, all energies",
+                )
+            )
+            handled.update(
+                {
+                    ("Dosimetry", label)
+                    for label in dosimetry_labels
+                    if label != "Quickcheck Constancy"
+                }
+            )
+
+        if "Quickcheck Constancy" in dosimetry_labels:
+            grouped.append(PerformedItem(category="Dosimetry", label="Quickcheck Constancy"))
+            handled.add(("Dosimetry", "Quickcheck Constancy"))
+
+    for item in items:
+        if (item.category, item.label) not in handled:
+            grouped.append(item)
+
+    return grouped
+
+
 def _summarize_catphan_scans(labels: set[str]) -> str:
     expected = {"MFOV CCW", "SFOV CW", "SFOV CCW", "MFOV CW"}
     if expected.issubset(labels):
@@ -205,3 +268,25 @@ def _summarize_mlc_items(labels: set[str]) -> str:
         summary.append("Picket fence by gantry angle")
 
     return ", ".join(summary)
+
+
+def _has_full_post_pmi_dosimetry(labels: set[str]) -> bool:
+    required = {
+        "Photon profile constancy",
+        "Electron profile constancy",
+        "Output and relative dosimetry :: 6 MV",
+        "Output and relative dosimetry :: 10 MV",
+        "Output and energy constancy :: 6 MeV",
+        "Output and energy constancy :: 8 MeV",
+        "Output and energy constancy :: 10 MeV",
+        "Output and energy constancy :: 12 MeV",
+        "Output and energy constancy :: 15 MeV",
+    }
+    return required.issubset(labels)
+
+
+def _looks_like_post_pmi(records: list[SourceRecord]) -> bool:
+    titles = [(record.title or "").lower() for record in records]
+    dosimetry_count = sum("linac monthly :: dosimetry ::" in title for title in titles)
+    has_profiles = any("profile constancy" in title for title in titles)
+    return dosimetry_count >= 3 and has_profiles

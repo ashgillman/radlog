@@ -8,9 +8,11 @@ from .models import CandidateEntry, PerformedItem, SourceRecord
 from .render import render_candidate
 from .site_rules import (
     aggregate_performed_items,
+    additional_notable_prompts,
     collection_frequency_name,
     equipment_group,
     map_performed_item,
+    resolve_entry_type,
 )
 
 
@@ -64,26 +66,32 @@ def _group_label(record: SourceRecord, entry_type: str) -> str:
 
 def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecord]) -> CandidateEntry:
     first = records[0]
-    entry_type = _infer_entry_type(first)
+    entry_type = resolve_entry_type(_infer_entry_type(first), records)
     site = first.site
 
     if entry_type == "linac_mqc":
         title = f"{unit} MQC"
         tags = [tag for tag in (site, unit) if tag]
+        group_label = label
+    elif entry_type == "post_pmi":
+        title = f"{unit} post-PMI"
+        tags = [tag for tag in (site, unit) if tag]
+        group_label = "post_pmi"
     else:
         title = first.title or f"{unit} QA"
         tags = [tag for tag in (site, unit) if tag]
+        group_label = label
 
     performed_items = aggregate_performed_items(
         entry_type,
         [map_performed_item(record, entry_type) for record in records],
     )
 
-    prompts = _notable_prompts(records)
+    prompts = additional_notable_prompts(entry_type, records) + _notable_prompts(records, entry_type)
 
     return CandidateEntry(
         entry_type=entry_type,
-        group_key=f"{date}_{unit}_{label}",
+        group_key=f"{date}_{unit}_{group_label}",
         date=date,
         title=title,
         site=site,
@@ -95,16 +103,18 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
     )
 
 
-def _notable_prompts(records: list[SourceRecord]) -> list[str]:
+def _notable_prompts(records: list[SourceRecord], entry_type: str) -> list[str]:
     prompts: list[str] = []
     for record in records:
         session = record.raw.get("session", {})
+        item = map_performed_item(record, entry_type)
+        prompt_label = item.label if item.category in {"Dosimetry", "MLC"} else record.title or item.label
         for comment in session.get("comments", []):
             text = str(comment.get("comment", "")).strip()
             if text:
-                prompts.append(text)
+                prompts.append(f"{prompt_label}\n  - {text}")
         if record.status == "flagged":
-            prompts.append(f"Review flagged results for {record.title}")
+            prompts.append(f"{prompt_label}\n  - Review flagged results")
     if not prompts:
         prompts.append("Review comments and flagged results")
         prompts.append("Manually enter here")

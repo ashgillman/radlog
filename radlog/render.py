@@ -68,4 +68,5 @@ def _render_tags(tags: list[str]) -> str:
 
 RENDERERS = {
     "linac_mqc": render_linac_mqc,
+    "post_pmi": render_linac_mqc,
 }
