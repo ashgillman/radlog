@@ -40,10 +40,15 @@ def test_render_post_pmi_org_text() -> None:
         unit="LA7",
         tags=["Hayman", "LA7"],
         performed_items=[
-            PerformedItem(category="Dosimetry", label="Output and relative dosimetry :: 10 MV"),
-            PerformedItem(category="Dosimetry", label="Photon profile constancy"),
+            PerformedItem(
+                category="Dosimetry",
+                label="Photon and electron profile, output and energy constancy, all energies",
+            ),
+            PerformedItem(category="Dosimetry", label="Quickcheck Constancy"),
+            PerformedItem(category="Safety and Functionality", label="Mechanical drive and interlocks"),
         ],
         notable_prompts=[
+            "Linac ready for clinical use. Re-enable energies and document on MOSAIQ.",
             "Photon profile constancy\n  - Discussed results with AB.",
             "Picket Fence: Gantry 270 Panel to G\n  - Peripheral leaf flagging tol, not clinically of high relevance",
         ],
@@ -54,5 +59,12 @@ def test_render_post_pmi_org_text() -> None:
 
     assert "**** [2026-03-06 Fri] LA7 post-PMI :Hayman:LA7:" in rendered
     assert ":RM_GROUP_KEY: 2026-03-06_LA7_post_pmi" in rendered
+    assert "Maintenance:" in rendered
+    assert "- Beam tuning" in rendered
+    assert "Return to service:" in rendered
+    assert "- Dosimetry :: Photon and electron profile, output and energy constancy, all energies" in rendered
+    assert "Additional MQA:" in rendered
+    assert "- Dosimetry :: Quickcheck Constancy" in rendered
+    assert "- Safety and Functionality :: Mechanical drive and interlocks" in rendered
     assert "- Photon profile constancy" in rendered
     assert "  - Discussed results with AB." in rendered
