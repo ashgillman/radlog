@@ -66,7 +66,7 @@ def test_group_source_records_merges_linac_monthly_sessions() -> None:
     ]
 
 
-def test_group_source_records_keeps_non_monthly_sessions_separate() -> None:
+def test_group_source_records_folds_same_day_reference_dosimetry_into_existing_monthly_group() -> None:
     monthly_frequency = "https://radmachine.radformation.com/tcc/api/qa/frequencies/3/"
     records = [
         _record(
@@ -88,8 +88,41 @@ def test_group_source_records_keeps_non_monthly_sessions_separate() -> None:
 
     entries = group_source_records(records)
 
-    assert len(entries) == 2
-    assert {entry.entry_type for entry in entries} == {"linac_mqc", "qa_session"}
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "linac_mqc"
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("Dosimetry", "Output and relative dosimetry :: 10 MV"),
+        ("Ad hoc", "Reference dosimetry :: Photons :: 6 MV"),
+    ]
+
+
+def test_group_source_records_groups_abc_weekly_entries() -> None:
+    records = [
+        _record(
+            "14001",
+            "2026-04-07T08:00:00+10:00",
+            "ABC 1",
+            None,
+            "ABC Weekly QC",
+        ),
+        _record(
+            "14002",
+            "2026-04-07T08:15:00+10:00",
+            "ABC 1",
+            None,
+            "ABC Weekly QC",
+        ),
+    ]
+
+    entries = group_source_records(records)
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "abc_weekly"
+    assert entry.group_key == "2026-04-07_ABC 1_abc_weekly"
+    assert entry.title == "ABC 1 Weekly QA"
+    assert entry.source_ids == ["qa:14001", "qa:14002"]
 
 
 def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -> None:
@@ -154,8 +187,10 @@ def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -
         ("EPID Image Quality", "Contrast visibility"),
     ]
     assert {entry.title for entry in entries if entry.entry_type == "qa_session"} == {
-        "ABC Weekly QC",
         "Quickcheck Data Download",
+    }
+    assert {entry.title for entry in entries if entry.entry_type == "abc_weekly"} == {
+        "ABC 1 Weekly QA",
     }
 
 
@@ -346,6 +381,37 @@ def test_group_source_records_collapses_linac_monthly_items_into_authored_summar
         ("Safety and Functionality", "Mechanical drive and interlocks"),
         ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
         ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
+    ]
+
+
+def test_group_source_records_folds_same_day_reference_dosimetry_into_linac_monthly_ad_hoc() -> None:
+    monthly_frequency = "https://radmachine.radformation.com/tcc/api/qa/frequencies/3/"
+    records = [
+        _record(
+            "14100",
+            "2026-04-07T10:00:00+10:00",
+            "LA7",
+            "Hayman",
+            "Linac Monthly :: Safety and Functionality",
+            frequency=monthly_frequency,
+        ),
+        _record(
+            "14101",
+            "2026-04-07T14:00:00+10:00",
+            "LA7",
+            "Hayman",
+            "Reference dosimetry :: Photons :: 10 MV",
+        ),
+    ]
+
+    entries = group_source_records(records)
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "linac_mqc"
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("Safety and Functionality", "Mechanical drive and interlocks"),
+        ("Ad hoc", "Reference dosimetry :: Photons :: 10 MV"),
     ]
 
 

@@ -95,6 +95,9 @@ def _map_linac_mqc_performed_item(record: SourceRecord) -> PerformedItem:
         label = title.removeprefix("Linac Monthly :: Dosimetry :: ").strip()
         return PerformedItem(category="Dosimetry", label=label)
 
+    if title.startswith("Reference dosimetry :: "):
+        return PerformedItem(category="Ad hoc", label=title)
+
     if title == "EPID image quality (PTW EPID QC)":
         return PerformedItem(category="EPID Image Quality", label='Contrast visibility')
 

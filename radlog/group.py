@@ -17,6 +17,13 @@ from .site_rules import (
 
 
 def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
+    monthly_bucket_keys = {
+        (record.performed_at[:10], record.unit)
+        for record in records
+        if record.performed_at
+        and record.unit
+        and _infer_entry_type(record) == "linac_mqc"
+    }
     buckets: dict[tuple[str, str, str], list[SourceRecord]] = {}
 
     for record in sorted(records, key=_record_sort_key):
@@ -24,7 +31,7 @@ def group_source_records(records: list[SourceRecord]) -> list[CandidateEntry]:
             continue
         date = record.performed_at[:10]
         entry_type = _infer_entry_type(record)
-        group_key = (date, record.unit, _group_label(record, entry_type))
+        group_key = (date, record.unit, _group_label(record, entry_type, monthly_bucket_keys))
         buckets.setdefault(group_key, []).append(record)
 
     return [
@@ -55,11 +62,26 @@ def _infer_entry_type(record: SourceRecord) -> str:
     frequency = collection_frequency_name(record)
     if equipment == "linac" and frequency == "monthly":
         return "linac_mqc"
+    if (record.title or "") == "ABC Weekly QC":
+        return "abc_weekly"
     return "qa_session"
 
 
-def _group_label(record: SourceRecord, entry_type: str) -> str:
+def _group_label(
+    record: SourceRecord,
+    entry_type: str,
+    monthly_bucket_keys: set[tuple[str, str]],
+) -> str:
     if entry_type == "linac_mqc":
+        return "linac_monthly"
+    if entry_type == "abc_weekly":
+        return "abc_weekly"
+    if (
+        equipment_group(record) == "linac"
+        and (record.title or "").startswith("Reference dosimetry :: ")
+        and record.performed_at
+        and (record.performed_at[:10], record.unit or "") in monthly_bucket_keys
+    ):
         return "linac_monthly"
     return record.title or "qa_session"
 
@@ -77,6 +99,10 @@ def _build_candidate(date: str, unit: str, label: str, records: list[SourceRecor
         title = f"{unit} post-PMI"
         tags = [tag for tag in (site, unit) if tag]
         group_label = "post_pmi"
+    elif entry_type == "abc_weekly":
+        title = f"{unit} Weekly QA"
+        tags = [tag for tag in (site, unit) if tag]
+        group_label = "abc_weekly"
     else:
         title = first.title or f"{unit} QA"
         tags = [tag for tag in (site, unit) if tag]
@@ -117,7 +143,4 @@ def _notable_prompts(records: list[SourceRecord], entry_type: str) -> list[str]:
             prompts.append(f"{prompt_label}\n  - Review flagged results")
     if not prompts:
         prompts.append("Review comments and flagged results")
-        prompts.append("Manually enter here")
-    else:
-        prompts.append("Manually enter here")
     return prompts
