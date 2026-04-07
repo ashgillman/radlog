@@ -1,17 +1,9 @@
 #+title: TODO - RadMachine → Org Logbook Importer
 
-* TODO Project scaffolding
-- [ ] Keep the initial scaffold minimal; add tests/examples when they unblock real work
-
 * TODO Nix environment
 - [ ] Document the expected =nix develop= / =direnv allow= workflow
 
-* TODO Testing
-- [ ] Add higher-value tests once grouping and rendering stop moving
-
 * TODO RadMachine client
-- [ ] Add structured error handling for 401/403/404/5xx
-- [ ] Add low-rate request throttling
 - [ ] Save example raw payloads for local development
 
 * TODO Endpoint discovery
@@ -90,16 +82,8 @@
 - [ ] Document duplicate-handling behaviour
 
 * TODO Nice-to-have later
-- [ ] SQLite cache of fetched records
 - [ ] Incremental sync mode
 - [ ] Update/re-render previously imported entries
 - [ ] Attachment/link enrichment
 - [ ] Routing to different logbook subtrees by entry type
-- [ ] Org ID insertion if missing
-- [ ] Optional backlinks into Org-roam
 - [ ] TUI preview for non-Emacs testing
-
-* TODO First milestone definition
-- [ ] Can review in Emacs
-- [ ] Can insert accepted entry into a logbook
-- [ ] Can avoid obvious duplicate insertion
