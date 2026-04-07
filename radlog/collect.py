@@ -17,6 +17,7 @@ def collect_qa_sessions(
     extra_params: dict[str, str] | None = None,
 ) -> list[SourceRecord]:
     params = dict(extra_params or {})
+    params.setdefault("limit", "100")
     params.setdefault("ordering", "-work_completed")
     descending_by_completion = params.get("ordering") == "-work_completed"
     if user:
