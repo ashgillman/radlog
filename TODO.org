@@ -8,7 +8,6 @@
 
 * TODO Endpoint discovery
 - [ ] Confirm actual site-specific endpoints for:
-  - [ ] service events
   - [ ] faults
 - [ ] Confirm relevant timestamp fields for incremental/date-range filtering
 - [ ] Confirm whether service events and faults expose attached metadata of interest
@@ -20,7 +19,6 @@
 * TODO Classification
 - [ ] Write classifier for annual QA
 - [ ] Write classifier for CT monthly QA
-- [ ] Write classifier for service events
 - [ ] Write classifier for faults
 - [ ] Write classifier for ABC weekly QA
 - [ ] Add tests for classifiers once fixture shape stabilizes
@@ -32,7 +30,6 @@
 
 * TODO Rendering
 - [ ] Implement Org renderer for =ct_monthly=
-- [ ] Implement Org renderer for =service_event=
 - [ ] Implement Org renderer for =fault=
 - [ ] Deduplicate repeated comments and low-value prompts in rendered MQA output
 - [ ] Decide whether =RM_GROUP_KEY= / =RM_SOURCE_IDS= should stay visible in the inserted entry or be hidden elsewhere

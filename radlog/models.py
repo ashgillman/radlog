@@ -11,6 +11,14 @@ class PerformedItem:
     category: str
     label: str
     duration_min: int | None = None
+    url: str | None = None
+    links: list["LinkRef"] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class LinkRef:
+    label: str
+    url: str
 
 
 @dataclass(slots=True)
@@ -49,4 +57,5 @@ class CandidateEntry:
     flagged_items: list[FlaggedItem] = field(default_factory=list)
     notable_prompts: list[str] = field(default_factory=list)
     source_ids: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     rendered_org: str | None = None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from radlog.models import CandidateEntry, PerformedItem
+from radlog.models import CandidateEntry, LinkRef, PerformedItem
 from radlog.render import render_candidate
 
 
@@ -14,23 +14,36 @@ def test_render_linac_mqc_org_text() -> None:
         unit="LA7",
         tags=["Hayman", "LA7"],
         performed_items=[
-            PerformedItem(category="Dosimetry", label="Output and relative dosimetry :: 10 MV"),
-            PerformedItem(category="Dosimetry", label="Output and relative dosimetry :: 6 MV"),
-            PerformedItem(category="Ad hoc", label="Reference dosimetry :: Photons :: 10 MV"),
+            PerformedItem(
+                category="Imaging",
+                label="CatPhan 503",
+                links=[
+                    LinkRef(label="MFOV CCW", url="https://radmachine.radformation.com/tcc/qa/session/details/13805/"),
+                    LinkRef(label="MFOV CWA", url="https://radmachine.radformation.com/tcc/qa/session/details/13806/"),
+                    LinkRef(label="SFOV CCW", url="https://radmachine.radformation.com/tcc/qa/session/details/13807/"),
+                    LinkRef(label="SFOV CW", url="https://radmachine.radformation.com/tcc/qa/session/details/13808/"),
+                ],
+            ),
+            PerformedItem(
+                category="Winston Lutz",
+                label="6 MV",
+                url="https://radmachine.radformation.com/tcc/qa/session/details/13809/",
+            ),
         ],
-        notable_prompts=["Output verification/re-baselining"],
-        source_ids=["qa:13162", "qa:13167"],
+        notable_prompts=["<none in source records>"],
+        source_ids=["qa:13805", "qa:13806", "qa:13807", "qa:13808", "qa:13809"],
+        metadata={"suppress_links_block": True},
     )
 
     rendered = render_candidate(entry)
 
     assert "**** [2026-03-06 Fri] LA7 MQC :Hayman:LA7:" in rendered
     assert ":RM_GROUP_KEY: 2026-03-06_LA7_linac_monthly" in rendered
-    assert ":RM_SOURCE_IDS: qa:13162,qa:13167" in rendered
-    assert "- Dosimetry :: Output and relative dosimetry :: 10 MV" in rendered
-    assert "Ad hoc:" in rendered
-    assert "- Reference dosimetry :: Photons :: 10 MV" in rendered
-    assert "- Output verification/re-baselining" in rendered
+    assert ":RM_SOURCE_IDS: qa:13805,qa:13806,qa:13807,qa:13808,qa:13809" in rendered
+    assert "RadMachine links:" not in rendered
+    assert "- Imaging :: CatPhan 503 ([[https://radmachine.radformation.com/tcc/qa/session/details/13805/][MFOV CCW]], [[https://radmachine.radformation.com/tcc/qa/session/details/13806/][MFOV CWA]], [[https://radmachine.radformation.com/tcc/qa/session/details/13807/][SFOV CCW]], [[https://radmachine.radformation.com/tcc/qa/session/details/13808/][SFOV CW]])" in rendered
+    assert "- Winston Lutz :: [[https://radmachine.radformation.com/tcc/qa/session/details/13809/][6 MV]]" in rendered
+    assert "- <none in source records>" in rendered
     assert "Manually enter here" not in rendered
 
 
@@ -84,20 +97,92 @@ def test_render_post_pmi_org_text() -> None:
 def test_render_abc_weekly_org_text() -> None:
     entry = CandidateEntry(
         entry_type="abc_weekly",
-        group_key="2026-04-07_ABC 1_abc_weekly",
+        group_key="2026-04-07_ABC_abc_weekly",
         date="2026-04-07",
-        title="ABC 1 Weekly QA",
+        title="ABC Weekly",
         site=None,
-        unit="ABC 1",
-        tags=["ABC 1"],
-        performed_items=[PerformedItem(category="QA", label="ABC Weekly QC")],
+        unit="ABC",
+        tags=["ABCWeekly"],
+        performed_items=[
+            PerformedItem(category="ABC 1", label="ABC Weekly QC"),
+            PerformedItem(category="ABC 2", label="ABC Weekly QC"),
+            PerformedItem(category="ABC 3", label="ABC Weekly QC"),
+        ],
         notable_prompts=["Split cable near PRS - Elekta still to repair."],
-        source_ids=["qa:13611"],
+        source_ids=["qa:13611", "qa:13579", "qa:13580"],
     )
 
     rendered = render_candidate(entry)
 
-    assert "**** [2026-04-07 Tue] ABC 1 Weekly QA :ABC 1:" in rendered
-    assert ":RM_GROUP_KEY: 2026-04-07_ABC 1_abc_weekly" in rendered
-    assert "- ABC Weekly QC" in rendered
+    assert "**** [2026-04-07 Tue] ABC Weekly :ABCWeekly:" in rendered
+    assert ":RM_GROUP_KEY: 2026-04-07_ABC_abc_weekly" in rendered
+    assert "- ABC 1 :: ABC Weekly QC" in rendered
+    assert "- ABC 2 :: ABC Weekly QC" in rendered
+    assert "- ABC 3 :: ABC Weekly QC" in rendered
     assert "Manually enter here" not in rendered
+
+
+def test_render_abc_ad_hoc_org_text() -> None:
+    entry = CandidateEntry(
+        entry_type="abc_ad_hoc",
+        group_key="2026-04-14_ABC_abc_ad_hoc",
+        date="2026-04-14",
+        title="ABC Ad hoc QA",
+        site=None,
+        unit="ABC",
+        tags=["ABC2"],
+        performed_items=[
+            PerformedItem(
+                category="Problem Description",
+                label="Balloon Tests 3B and 4B have been failing. These are not impacting on clinical performance, but may indicate balloon wear and tear.",
+            ),
+            PerformedItem(category="Work description", label="Elekta replaced the balloon valve."),
+        ],
+        notable_prompts=[
+            "Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing."
+        ],
+        source_ids=["service:324"],
+        metadata={
+            "url": "https://radmachine.radformation.com/tcc/servicelog/event/details/324/",
+            "return_to_service_qa": ["ABC Weekly QC"],
+        },
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "**** [2026-04-14 Tue] ABC Ad hoc QA :ABC2:" in rendered
+    assert ":RM_GROUP_KEY: 2026-04-14_ABC_abc_ad_hoc" in rendered
+    assert ":RM_SOURCE_IDS: service:324" in rendered
+    assert ":URL: https://radmachine.radformation.com/tcc/servicelog/event/details/324/" in rendered
+    assert "- Problem Description :: Balloon Tests 3B and 4B have been failing. These are not impacting on clinical performance, but may indicate balloon wear and tear." in rendered
+    assert "- Work description :: Elekta replaced the balloon valve." in rendered
+    assert "  Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing." in rendered
+    assert "- Return To Service QA ::" in rendered
+    assert "  - ABC Weekly QC" in rendered
+
+
+def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> None:
+    entry = CandidateEntry(
+        entry_type="abc_ad_hoc",
+        group_key="2026-04-14_ABC_abc_ad_hoc",
+        date="2026-04-14",
+        title="ABC Ad hoc QA",
+        site=None,
+        unit="ABC",
+        tags=["ABC2"],
+        performed_items=[
+            PerformedItem(
+                category="Problem Description",
+                label="Balloon Tests 3B and 4B have been failing.\r\nThese are not impacting on clinical performance, but may indicate balloon wear and tear.",
+            ),
+        ],
+        notable_prompts=[],
+        source_ids=["service:324"],
+        metadata={"url": "https://radmachine.radformation.com/tcc/servicelog/event/details/324/"},
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "\r" not in rendered
+    assert "- Problem Description :: Balloon Tests 3B and 4B have been failing." in rendered
+    assert "  These are not impacting on clinical performance, but may indicate balloon wear and tear." in rendered

@@ -201,24 +201,25 @@ token_env = "RADMACHINE_TOKEN"
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
     with patch("radlog.cli.collect_qa_sessions", return_value=[{"remote_id": "13162"}]):
-        with patch("radlog.cli.serialize_source_records", return_value=[{"remote_id": "13162"}]):
-            with patch("radlog.cli.group_source_records", return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}]):
-                with patch(
-                    "radlog.cli.serialize_candidate_entries",
-                    return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}],
-                ):
-                    exit_code = main(
-                        [
-                            "--config",
-                            str(config_file),
-                            "--collect",
-                            "qa-candidates",
-                            "--start",
-                            "2026-03-01",
-                            "--end",
-                            "2026-03-31",
-                        ]
-                    )
+        with patch("radlog.cli.collect_service_events", return_value=[]):
+            with patch("radlog.cli.serialize_source_records", return_value=[{"remote_id": "13162"}]):
+                with patch("radlog.cli.group_source_records", return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}]):
+                    with patch(
+                        "radlog.cli.serialize_candidate_entries",
+                        return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}],
+                    ):
+                        exit_code = main(
+                            [
+                                "--config",
+                                str(config_file),
+                                "--collect",
+                                "qa-candidates",
+                                "--start",
+                                "2026-03-01",
+                                "--end",
+                                "2026-03-31",
+                            ]
+                        )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -227,6 +228,54 @@ token_env = "RADMACHINE_TOKEN"
     assert payload["server"] is None
     assert payload["records"] == [{"remote_id": "13162"}]
     assert payload["candidates"] == [{"group_key": "2026-03-06_LA7_linac_monthly"}]
+
+
+def test_cli_collects_service_events_into_candidates(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+username = "default-user"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.collect_qa_sessions", return_value=[]):
+        with patch("radlog.cli.collect_service_events", return_value=[{"remote_id": "324", "source_type": "service_event"}]):
+            with patch(
+                "radlog.cli.serialize_source_records",
+                return_value=[{"remote_id": "324", "source_type": "service_event"}],
+            ):
+                with patch(
+                    "radlog.cli.group_source_records",
+                    return_value=[{"group_key": "2026-04-14_ABC_abc_ad_hoc"}],
+                ):
+                    with patch(
+                        "radlog.cli.serialize_candidate_entries",
+                        return_value=[{"group_key": "2026-04-14_ABC_abc_ad_hoc"}],
+                    ):
+                        exit_code = main(
+                            [
+                                "--config",
+                                str(config_file),
+                                "--collect",
+                                "qa-candidates",
+                                "--start",
+                                "2026-04-01",
+                                "--end",
+                                "2026-04-20",
+                            ]
+                        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["records"] == [{"remote_id": "324", "source_type": "service_event"}]
+    assert payload["candidates"] == [{"group_key": "2026-04-14_ABC_abc_ad_hoc"}]
 
 
 def test_cli_rejects_invalid_param(capsys, tmp_path, monkeypatch) -> None:

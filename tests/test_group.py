@@ -20,6 +20,9 @@ def _record(
             "frequency": frequency,
             "due_date": due_date,
         }
+    raw["session"] = {
+        "site_url": f"https://radmachine.radformation.com/tcc/qa/session/details/{remote_id}/"
+    }
     return SourceRecord(
         source_type="qa_session",
         remote_id=remote_id,
@@ -60,9 +63,10 @@ def test_group_source_records_merges_linac_monthly_sessions() -> None:
     assert entry.group_key == "2026-03-06_LA7_linac_monthly"
     assert entry.title == "LA7 MQC"
     assert entry.source_ids == ["qa:13162", "qa:13167"]
-    assert [item.label for item in entry.performed_items] == [
-        "Output and relative dosimetry :: 10 MV",
-        "Output and relative dosimetry :: 6 MV",
+    assert entry.metadata["suppress_links_block"] is True
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("Dosimetry", "Output and relative dosimetry :: 10 MV"),
+        ("Dosimetry", "Output and relative dosimetry :: 6 MV"),
     ]
 
 
@@ -95,6 +99,8 @@ def test_group_source_records_folds_same_day_reference_dosimetry_into_existing_m
         ("Dosimetry", "Output and relative dosimetry :: 10 MV"),
         ("Ad hoc", "Reference dosimetry :: Photons :: 6 MV"),
     ]
+    assert entry.performed_items[0].url == "https://radmachine.radformation.com/tcc/qa/session/details/13162/"
+    assert entry.performed_items[1].url == "https://radmachine.radformation.com/tcc/qa/session/details/13170/"
 
 
 def test_group_source_records_groups_abc_weekly_entries() -> None:
@@ -109,7 +115,14 @@ def test_group_source_records_groups_abc_weekly_entries() -> None:
         _record(
             "14002",
             "2026-04-07T08:15:00+10:00",
-            "ABC 1",
+            "ABC 2",
+            None,
+            "ABC Weekly QC",
+        ),
+        _record(
+            "14003",
+            "2026-04-07T08:30:00+10:00",
+            "ABC 3",
             None,
             "ABC Weekly QC",
         ),
@@ -120,9 +133,54 @@ def test_group_source_records_groups_abc_weekly_entries() -> None:
     assert len(entries) == 1
     entry = entries[0]
     assert entry.entry_type == "abc_weekly"
-    assert entry.group_key == "2026-04-07_ABC 1_abc_weekly"
-    assert entry.title == "ABC 1 Weekly QA"
-    assert entry.source_ids == ["qa:14001", "qa:14002"]
+    assert entry.group_key == "2026-04-07_ABC_abc_weekly"
+    assert entry.title == "ABC Weekly"
+    assert entry.source_ids == ["qa:14001", "qa:14002", "qa:14003"]
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("ABC 1", "ABC Weekly QC"),
+        ("ABC 2", "ABC Weekly QC"),
+        ("ABC 3", "ABC Weekly QC"),
+    ]
+
+
+def test_group_source_records_routes_abc_service_events_to_abc_ad_hoc() -> None:
+    record = SourceRecord(
+        source_type="service_event",
+        remote_id="324",
+        performed_at="2026-04-14T14:46:00+10:00",
+        created_at="2026-04-14T15:57:46+10:00",
+        unit="ABC 2",
+        title="Balloon Tests 3B and 4B have been failing.",
+        status="submitted",
+        raw={
+            "service_event": {
+                "problem_description": "Balloon Tests 3B and 4B have been failing.",
+                "work_description": "Elekta replaced the balloon valve.\n\nPerformed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing.",
+                "service_type_name": "Repair",
+                "event_url": "https://radmachine.radformation.com/tcc/servicelog/event/details/324/",
+                "return_to_service_qa": ["ABC Weekly QC"],
+            }
+        },
+    )
+
+    entries = group_source_records([record])
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "abc_ad_hoc"
+    assert entry.group_key == "2026-04-14_ABC_abc_ad_hoc"
+    assert entry.title == "ABC Ad hoc QA"
+    assert entry.tags == ["ABC2"]
+    assert entry.source_ids == ["service:324"]
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("Problem Description", "Balloon Tests 3B and 4B have been failing."),
+        ("Work description", "Elekta replaced the balloon valve."),
+    ]
+    assert entry.notable_prompts == [
+        "Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing."
+    ]
+    assert entry.metadata["url"] == "https://radmachine.radformation.com/tcc/servicelog/event/details/324/"
+    assert entry.metadata["return_to_service_qa"] == ["ABC Weekly QC"]
 
 
 def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -> None:
@@ -182,15 +240,19 @@ def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -
     assert linac_entry.group_key == "2026-03-30_LA7_linac_monthly"
     assert linac_entry.source_ids == ["qa:13452", "qa:13460", "qa:13465"]
     assert [(item.category, item.label) for item in linac_entry.performed_items] == [
-        ("Imaging", "CatPhan 503 (SFOV CW)"),
+        ("Imaging", "CatPhan 503"),
         ("Winston Lutz", "6 MV"),
         ("EPID Image Quality", "Contrast visibility"),
     ]
+    assert [(link.label, link.url) for link in linac_entry.performed_items[0].links] == [
+        ("SFOV CW", "https://radmachine.radformation.com/tcc/qa/session/details/13452/"),
+    ]
+    assert linac_entry.performed_items[1].url == "https://radmachine.radformation.com/tcc/qa/session/details/13460/"
     assert {entry.title for entry in entries if entry.entry_type == "qa_session"} == {
         "Quickcheck Data Download",
     }
     assert {entry.title for entry in entries if entry.entry_type == "abc_weekly"} == {
-        "ABC 1 Weekly QA",
+        "ABC Weekly",
     }
 
 
@@ -376,11 +438,17 @@ def test_group_source_records_collapses_linac_monthly_items_into_authored_summar
     entry = group_source_records(records)[0]
 
     assert [(item.category, item.label) for item in entry.performed_items] == [
-        ("Imaging", "CatPhan 503 (MFOV+SFOV x CW+CCW)"),
+        ("Imaging", "CatPhan 503"),
         ("Mechanical", "Machine mechanical measurements"),
         ("Safety and Functionality", "Mechanical drive and interlocks"),
         ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
         ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
+    ]
+    assert [link.label for link in entry.performed_items[0].links] == [
+        "MFOV CCW",
+        "MFOV CW",
+        "SFOV CCW",
+        "SFOV CW",
     ]
 
 

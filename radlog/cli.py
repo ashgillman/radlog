@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 
 from .api import RadMachineClient
-from .collect import collect_qa_sessions, serialize_source_records
+from .collect import collect_qa_sessions, collect_service_events, serialize_source_records
 from .config import ConfigError, load_config
 from .group import group_source_records, serialize_candidate_entries
 
@@ -84,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
                 end=args.end,
                 user=args.user or config.radmachine.username,
                 extra_params=params,
+            ) + collect_service_events(
+                client,
+                start=args.start,
+                end=args.end,
+                extra_params={},
             )
             server_payload = None
             collected_payload = serialize_source_records(records)

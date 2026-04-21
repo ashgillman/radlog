@@ -62,12 +62,13 @@ def test_aggregate_performed_items_collapses_linac_mqc_summary_lines() -> None:
     summary = aggregate_performed_items("linac_mqc", items)
 
     assert [(item.category, item.label) for item in summary] == [
-        ("Imaging", "CatPhan 503 (MFOV+SFOV x CW+CCW)"),
+        ("Imaging", "CatPhan 503"),
         ("Mechanical", "Machine mechanical measurements"),
         ("Safety and Functionality", "Mechanical drive and interlocks"),
         ("Geometry", "EPID scaling, light vs. radiation, jaw drive accuracy"),
         ("MLC", "Leaf speed constancy, DRGS, Picket fence by gantry angle"),
     ]
+    assert [link.label for link in summary[0].links] == []
 
 
 def test_aggregate_performed_items_collapses_post_pmi_dosimetry_summary_lines() -> None:

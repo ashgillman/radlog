@@ -62,8 +62,104 @@ def collect_qa_sessions(
     return records
 
 
+def collect_service_events(
+    client: RadMachineClient,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> list[SourceRecord]:
+    params = dict(extra_params or {})
+    params.setdefault("limit", "100")
+    params.setdefault("ordering", "-datetime_service")
+    descending_by_service = params.get("ordering") == "-datetime_service"
+
+    records: list[SourceRecord] = []
+    cache: dict[str, dict] = {}
+    selected_events: list[dict] = []
+
+    for service_event in client.paginate("servicelog/serviceevents", params=params):
+        performed_at = service_event.get("datetime_service") or service_event.get("datetime_created")
+        if start and performed_at is not None and performed_at[:10] < start:
+            if descending_by_service:
+                break
+            continue
+        if end and (performed_at is None or performed_at[:10] > end):
+            continue
+
+        selected_events.append(service_event)
+
+    return_to_service_qa = _collect_return_to_service_qa(
+        client,
+        cache,
+        {
+            service_event.get("url")
+            for service_event in selected_events
+            if service_event.get("url")
+        },
+    )
+
+    for service_event in selected_events:
+        unit_service_area = _fetch_json(client, cache, service_event.get("unit_service_area"))
+        unit = _fetch_json(client, cache, unit_service_area.get("unit")) if unit_service_area else {}
+        service_type = _fetch_json(client, cache, service_event.get("service_type"))
+        service_status = _fetch_json(client, cache, service_event.get("service_status"))
+
+        problem_description = str(service_event.get("problem_description", "")).strip()
+        work_description = str(service_event.get("work_description", "")).strip()
+
+        records.append(
+            SourceRecord(
+                source_type="service_event",
+                remote_id=_extract_id(service_event.get("url", "")),
+                created_at=service_event.get("datetime_created"),
+                updated_at=service_event.get("datetime_modified"),
+                performed_at=performed_at,
+                created_by=_extract_id(service_event.get("user_created_by", "")),
+                unit=unit.get("name") or None,
+                title=problem_description or work_description or None,
+                status=_service_event_status_name(service_status),
+                raw={
+                    "service_event": {
+                        **service_event,
+                        "event_url": _service_event_url(service_event.get("url")),
+                        "return_to_service_qa": return_to_service_qa.get(service_event.get("url"), []),
+                        "service_type_name": service_type.get("name"),
+                        "service_status_name": service_status.get("name"),
+                    },
+                    "unit_service_area": unit_service_area,
+                    "unit": unit,
+                },
+            )
+        )
+
+    return records
+
+
 def serialize_source_records(records: list[SourceRecord]) -> list[dict]:
     return [asdict(record) for record in records]
+
+
+def _collect_return_to_service_qa(
+    client: RadMachineClient,
+    cache: dict[str, dict],
+    service_event_urls: set[str],
+) -> dict[str, list[str]]:
+    event_to_qa: dict[str, list[str]] = {}
+    if not service_event_urls:
+        return event_to_qa
+
+    for item in client.paginate("servicelog/returntoserviceqa", params={"limit": "100"}):
+        service_event_url = item.get("service_event")
+        if service_event_url not in service_event_urls:
+            continue
+        unit_test_collection = _fetch_json(client, cache, item.get("unit_test_collection"))
+        qa_name = str(unit_test_collection.get("name", "")).strip()
+        if not service_event_url or not qa_name:
+            continue
+        event_to_qa.setdefault(service_event_url, []).append(qa_name)
+
+    return event_to_qa
 
 
 def _fetch_json(client: RadMachineClient, cache: dict[str, dict], url: str | None) -> dict:
@@ -96,3 +192,21 @@ def _session_status(session: dict) -> str:
     if session.get("reviewed"):
         return "reviewed"
     return "completed"
+
+
+def _service_event_status_name(service_status: dict) -> str:
+    name = str(service_status.get("name", "")).strip().lower()
+    if not name:
+        return "service_event"
+    return name.replace(" ", "_")
+
+
+def _service_event_url(api_url: str | None) -> str | None:
+    if not api_url:
+        return None
+    service_event_id = _extract_id(api_url)
+    marker = "/api/servicelog/serviceevents/"
+    if marker not in api_url:
+        return None
+    prefix, _ = api_url.split(marker, 1)
+    return f"{prefix}/servicelog/event/details/{service_event_id}/"
