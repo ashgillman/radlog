@@ -1,4 +1,5 @@
 (require 'ert)
+(require 'cl-lib)
 (load-file "/Users/gil/src/radmachine-to-logbook/elisp/radlog.el")
 
 (ert-deftest radlog-resolve-destination-uses-entry-type-route ()
@@ -20,3 +21,40 @@
     (should-error
      (radlog--resolve-destination '((entry_type . "qa_session")) nil)
      :type 'user-error)))
+
+(ert-deftest radlog-adjust-heading-level-makes-draft-a-child-of-target ()
+  (should
+   (equal
+    (radlog--adjust-heading-level
+     "**** [2026-04-07 Tue] ABC Weekly :ABCWeekly:\nBody"
+     5)
+    "***** [2026-04-07 Tue] ABC Weekly :ABCWeekly:\nBody")))
+
+(ert-deftest radlog-skip-future-like-candidates-removes-same-entry-type-when-confirmed ()
+  (let ((radlog--candidate-queue
+         '(((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-2"))
+           ((entry_type . "linac_mqc") (title . "LA7 MQC") (group_key . "mqc"))
+           ((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-3")))))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
+      (should
+       (equal
+        (radlog--maybe-skip-future-like-candidates
+         '((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-1")))
+        2))
+      (should
+       (equal
+        radlog--candidate-queue
+        '(((entry_type . "linac_mqc") (title . "LA7 MQC") (group_key . "mqc"))))))))
+
+(ert-deftest radlog-skip-future-like-candidates-keeps-queue-when-declined ()
+  (let ((radlog--candidate-queue
+         '(((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-2")))))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+      (should
+       (= (radlog--maybe-skip-future-like-candidates
+           '((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-1")))
+          0))
+      (should
+       (equal
+        radlog--candidate-queue
+        '(((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-2"))))))))

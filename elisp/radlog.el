@@ -7,6 +7,7 @@
 (require 'json)
 (require 'org-id)
 (require 'org)
+(require 'seq)
 (require 'subr-x)
 
 (defcustom radlog-python-command "python"
@@ -104,6 +105,9 @@ for candidates whose specific `entry_type' is not mapped."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
+  (let ((skip-count (radlog--maybe-skip-future-like-candidates radlog--current-candidate)))
+    (when (> skip-count 0)
+      (setq radlog--total-candidates (- radlog--total-candidates skip-count))))
   (radlog--remove-current-draft)
   (radlog--advance-review "Skipped" (current-buffer) radlog--target-file))
 
@@ -168,6 +172,9 @@ for candidates whose specific `entry_type' is not mapped."
               end)
           (save-excursion
             (radlog--goto-id target-id)
+            (setq text (radlog--adjust-heading-level
+                        text
+                        (1+ (org-outline-level))))
             (org-end-of-subtree t t)
             (unless (bolp)
               (insert "\n"))
@@ -202,6 +209,41 @@ resolution."
     (error
      (user-error "radlog stopped while opening the next candidate: %s"
                  (error-message-string err)))))
+
+(defun radlog--maybe-skip-future-like-candidates (candidate)
+  "Optionally skip queued candidates similar to CANDIDATE.
+
+Return the number of additional queued candidates removed."
+  (let* ((entry-type (alist-get 'entry_type candidate))
+         (title (alist-get 'title candidate))
+         (matching-count (radlog--count-queued-candidates-of-type entry-type)))
+    (if (or (null entry-type) (= matching-count 0))
+        0
+      (if (y-or-n-p
+           (format "radlog: skip %d future %s entr%s too? "
+                   matching-count
+                   (or title entry-type)
+                   (if (= matching-count 1) "y" "ies")))
+          (radlog--drop-queued-candidates-of-type entry-type)
+        0))))
+
+(defun radlog--count-queued-candidates-of-type (entry-type)
+  "Return the number of queued candidates with ENTRY-TYPE."
+  (length
+   (seq-filter
+    (lambda (candidate)
+      (equal entry-type (alist-get 'entry_type candidate)))
+    radlog--candidate-queue)))
+
+(defun radlog--drop-queued-candidates-of-type (entry-type)
+  "Remove queued candidates with ENTRY-TYPE and return the number removed."
+  (let ((original-count (length radlog--candidate-queue)))
+    (setq radlog--candidate-queue
+          (seq-remove
+           (lambda (candidate)
+             (equal entry-type (alist-get 'entry_type candidate)))
+           radlog--candidate-queue))
+    (- original-count (length radlog--candidate-queue))))
 
 (defun radlog--remove-current-draft ()
   "Delete the current in-place draft from the buffer and save."
@@ -257,6 +299,19 @@ Return a cons cell of (FILE . ID)."
       (user-error "radlog could not find Org ID %s" id))
     (goto-char location)
     (org-back-to-heading t)))
+
+(defun radlog--adjust-heading-level (text target-level)
+  "Rewrite Org headings in TEXT so the first heading uses TARGET-LEVEL stars."
+  (with-temp-buffer
+    (insert text)
+    (goto-char (point-min))
+    (when (re-search-forward "^\\(\\*+\\) " nil t)
+      (let ((delta (- target-level (length (match-string 1)))))
+        (goto-char (point-min))
+        (while (re-search-forward "^\\(\\*+\\) " nil t)
+          (let ((new-level (+ (length (match-string 1)) delta)))
+            (replace-match (concat (make-string (max 1 new-level) ?*) " ") t t)))))
+    (buffer-string)))
 
 (defun radlog--duplicate-group-key-p (group-key)
   "Return non-nil if GROUP-KEY already exists in the current buffer."
