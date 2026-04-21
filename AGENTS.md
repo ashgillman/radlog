@@ -2,6 +2,7 @@
 
 Check README.org for project context if not in your recent history.
 
+* General rules
 Check TODO.org when identifying tasks or otherwise planning. Update that file when you complete a task by removing the entry, rather than marking done (git will be the history, not that file).
 
 Use multi-line commit messages. First line short summary, subsequent lines give moderate detail in dot points.
@@ -9,6 +10,10 @@ Use multi-line commit messages. First line short summary, subsequent lines give 
 Prefer TDD - failing test -> changes -> passing test
 
 Always check what's added after a blanket command like `git add .`, before committing.
+
+Suggest to stop and refactor when it starts to make sense.
+
+Try to separate out user-level features into different commits. This might require partial file staging.
 
 * Problem Statement
 
