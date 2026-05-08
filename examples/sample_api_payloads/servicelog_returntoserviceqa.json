@@ -1,0 +1,5 @@
+{
+  "url": "https://radmachine.radformation.com/tcc/api/servicelog/returntoserviceqa/854/",
+  "service_event": "https://radmachine.radformation.com/tcc/api/servicelog/serviceevents/324/",
+  "unit_test_collection": "https://radmachine.radformation.com/tcc/api/qa/unittestcollections/901/"
+}

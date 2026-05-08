@@ -3,9 +3,6 @@
 * TODO Nix environment
 - [ ] Document the expected =nix develop= / =direnv allow= workflow
 
-* TODO RadMachine client
-- [ ] Save example raw payloads for local development
-
 * TODO Endpoint discovery
 - [ ] Confirm actual site-specific endpoints for:
   - [ ] faults

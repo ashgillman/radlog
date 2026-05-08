@@ -1,0 +1,27 @@
+#+title: Sample RadMachine API Payloads
+
+These files are small redacted examples of the payload shapes the importer
+currently works with.
+
+They are not meant to be exhaustive captures of every field RadMachine returns.
+They exist so future work can inspect representative payloads without needing a
+live API session.
+
+Included examples:
+
+- =qa_testlistinstance.json=
+  - one performed QA session from =qa/testlistinstances=
+- =qa_unittestcollection.json=
+  - the linked assignment/collection record from =qa/unittestcollections=
+- =units_unit.json=
+  - the linked unit record from =units/units=
+- =servicelog_serviceevent.json=
+  - one service event from =servicelog/serviceevents=
+- =servicelog_returntoserviceqa.json=
+  - one linked return-to-service QA record from =servicelog/returntoserviceqa=
+
+These are intentionally redacted to:
+
+- avoid committing sensitive local data
+- preserve stable examples for documentation and tests
+- show only the fields that currently matter for collection and grouping

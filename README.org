@@ -24,6 +24,7 @@ Current implemented functionality:
 - draft Org rendering for =linac_mqc= candidates
 - automated tests for config loading, CLI behavior, collection, grouping, and
   rendering
+- sample redacted API payloads under =examples/sample_api_payloads/=
 
 This means the repository can already fetch real monthly linac QA data and emit
 draft Org text that is close enough to inspect manually.
@@ -115,6 +116,19 @@ Expected local setup:
 - keep =token_env = "RADMACHINE_TOKEN"= in config
 - place the actual token in a local =.env=
 - let =direnv= load it via =.envrc=
+
+* Sample Payloads
+
+Representative redacted payload examples live in:
+
+- =examples/sample_api_payloads/qa_testlistinstance.json=
+- =examples/sample_api_payloads/qa_unittestcollection.json=
+- =examples/sample_api_payloads/units_unit.json=
+- =examples/sample_api_payloads/servicelog_serviceevent.json=
+- =examples/sample_api_payloads/servicelog_returntoserviceqa.json=
+
+These are meant for documentation and local development when a live API session
+is inconvenient.
 
 * What Is Next
 
