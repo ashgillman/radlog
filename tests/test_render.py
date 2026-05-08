@@ -71,16 +71,27 @@ def test_render_post_pmi_org_text() -> None:
             "Picket Fence: Gantry 270 Panel to G\r\n  - Peripheral leaf flagging tol, not clinically of high relevance",
         ],
         source_ids=["qa:13162", "qa:13169"],
+        metadata={
+            "urls": [
+                "https://radmachine.radformation.com/tcc/qa/session/details/13162/",
+                "https://radmachine.radformation.com/tcc/qa/session/details/13169/",
+            ]
+        },
     )
 
     rendered = render_candidate(entry)
 
     assert "**** [2026-03-06 Fri] LA7 post-PMI :Hayman:LA7:" in rendered
     assert ":RM_GROUP_KEY: 2026-03-06_LA7_post_pmi" in rendered
+    assert "#+begin_comment" in rendered
+    assert "RadMachine links:" in rendered
+    assert "- https://radmachine.radformation.com/tcc/qa/session/details/13162/" in rendered
+    assert "#+end_comment" in rendered
     assert "Maintenance:" in rendered
     assert "- Beam tuning" in rendered
     assert "Return to service:" in rendered
     assert "- Dosimetry :: Photon and electron profile, output and energy constancy, all energies" in rendered
+    assert "- Linac ready for clinical use. Re-enable energies and document on MOSAIQ." in rendered
     assert "Additional MQA:" in rendered
     assert "- Dosimetry :: Quickcheck Constancy" in rendered
     assert "- Safety and Functionality :: Mechanical drive and interlocks" in rendered
@@ -91,6 +102,7 @@ def test_render_post_pmi_org_text() -> None:
     assert "  - SW output: -0.76%" in rendered
     assert "  - QC output: -0.15%" in rendered
     assert "  Output is actually drifting month-to-month. Within tolerance now, no update to linac outputs." in rendered
+    assert rendered.count("Linac ready for clinical use. Re-enable energies and document on MOSAIQ.") == 1
     assert "Manually enter here" not in rendered
 
 

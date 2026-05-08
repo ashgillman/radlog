@@ -48,6 +48,7 @@ def render_linac_mqc(entry: CandidateEntry) -> str:
 
 def render_post_pmi(entry: CandidateEntry) -> str:
     rts_items, extra_items, ad_hoc_items = _partition_post_pmi_items(entry)
+    rts_prompts, notable_prompts = _partition_post_pmi_prompts(entry.notable_prompts)
 
     lines = _render_entry_header(entry)
     lines.extend(
@@ -61,6 +62,9 @@ def render_post_pmi(entry: CandidateEntry) -> str:
 
     for item in rts_items:
         lines.extend(_render_performed_item(item, category=item.category))
+
+    for prompt in rts_prompts:
+        lines.append(f"- {prompt}")
 
     lines.extend(
         [
@@ -89,8 +93,8 @@ def render_post_pmi(entry: CandidateEntry) -> str:
         ]
     )
 
-    if entry.notable_prompts:
-        for prompt in entry.notable_prompts:
+    if notable_prompts:
+        for prompt in notable_prompts:
             lines.extend(_render_notable_prompt(prompt))
 
     return "\n".join(lines)
@@ -191,10 +195,10 @@ def _render_links_block(entry: CandidateEntry) -> list[str]:
     if not isinstance(urls, list) or not urls:
         return []
 
-    lines = ["RadMachine links:"]
+    lines = ["#+begin_comment", "RadMachine links:"]
     for url in urls:
         lines.append(f"- {url}")
-    lines.append("")
+    lines.extend(["#+end_comment", ""])
     return lines
 
 
@@ -261,6 +265,13 @@ def _partition_post_pmi_items(entry: CandidateEntry) -> tuple[list[PerformedItem
         if item not in rts_items and item not in ad_hoc_items
     ]
     return rts_items, extra_items, ad_hoc_items
+
+
+def _partition_post_pmi_prompts(prompts: list[str]) -> tuple[list[str], list[str]]:
+    rts_prompt = "Linac ready for clinical use. Re-enable energies and document on MOSAIQ."
+    rts_prompts = [prompt for prompt in prompts if prompt == rts_prompt]
+    notable_prompts = [prompt for prompt in prompts if prompt != rts_prompt]
+    return rts_prompts, notable_prompts
 
 
 RENDERERS = {
