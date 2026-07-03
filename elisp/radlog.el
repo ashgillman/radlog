@@ -48,6 +48,15 @@ for candidates whose specific `entry_type' is not mapped."
   :type '(alist :key-type string :value-type plist)
   :group 'radlog)
 
+(defcustom radlog-save-with-hooks nil
+  "Whether radlog should run save hooks when writing reviewed entries.
+
+When nil, radlog saves with `before-save-hook' and `after-save-hook'
+temporarily disabled. This avoids expensive or blocking hook chains during
+review accept/skip/defer flows."
+  :type 'boolean
+  :group 'radlog)
+
 (defvar radlog--candidate-queue nil)
 (defvar radlog--deferred-candidates nil)
 (defvar radlog--total-candidates 0)
@@ -97,7 +106,7 @@ for candidates whose specific `entry_type' is not mapped."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
-  (save-buffer)
+  (radlog--save-review-buffer)
   (radlog--advance-review "Kept" (current-buffer) radlog--target-file))
 
 (defun radlog-review-skip ()
@@ -254,7 +263,17 @@ Return the number of additional queued candidates removed."
         (end (marker-position radlog--draft-end-marker)))
     (widen)
     (delete-region start end)
-    (save-buffer)))
+    (radlog--save-review-buffer)))
+
+(defun radlog--save-review-buffer ()
+  "Save current buffer for radlog review operations.
+
+If `radlog-save-with-hooks' is nil, save without running save hooks."
+  (if radlog-save-with-hooks
+      (save-buffer)
+    (let ((before-save-hook nil)
+          (after-save-hook nil))
+      (basic-save-buffer nil))))
 
 (defun radlog--clear-review-state ()
   "Restore the current buffer after an in-place radlog review step."
