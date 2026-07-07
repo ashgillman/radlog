@@ -16,6 +16,8 @@ Current implemented functionality:
 
 - Nix + direnv development environment
 - token-based RadMachine API access via environment variable
+- typed client methods for common QA, unit, service event, and service-log RTS
+  QA endpoints
 - tolerant dataclass mirrors for commonly used RadMachine API objects, while
   preserving raw payloads
 - live API probing from the CLI
@@ -99,6 +101,16 @@ These models are intentionally partial and tolerant:
 
 This means code can move away from ad hoc dictionary access without pretending
 the RadMachine API is fully documented or stable.
+
+The lower-level client still exposes =get_json= and =paginate= for probing, but
+common endpoints also have typed helpers such as:
+
+- =qa_test_list_instances=
+- =qa_test_instances=
+- =qa_unit_test_collections=
+- =units=
+- =service_events=
+- =service_log_return_to_service_qa=
 
 * Example Draft
 

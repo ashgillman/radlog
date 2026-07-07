@@ -13,8 +13,6 @@
 - [ ] Define validation / parsing layer for raw payloads
 
 * TODO General RadMachine interface
-- [ ] Add typed convenience methods around common QA endpoints
-- [ ] Add typed convenience methods around common servicelog endpoints
 - [ ] Define safe write/create helpers for test entries behind explicit CLI flags
 - [ ] Add raw payload backup/export commands for selected endpoints and date ranges
 - [ ] Add examples for pulling third-party data into candidate test entries

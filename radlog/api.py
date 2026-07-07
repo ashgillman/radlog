@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections.abc import Iterator
+from typing import TypeVar
 from urllib.parse import urljoin
 
 import requests
 
 from .config import Config, get_token, validate_radmachine_config
+from .rm_models import (
+    ApiObject,
+    ServiceEvent,
+    ServiceLogReturnToServiceQA,
+    TestInstance,
+    TestListInstance,
+    Unit,
+    UnitTestCollection,
+)
+
+ApiModel = TypeVar("ApiModel", bound=ApiObject)
 
 
 class RadMachineClient:
@@ -57,6 +70,61 @@ class RadMachineClient:
             yield from results
             next_url = payload.get("next")
             next_params = None
+
+    def qa_test_list_instances(self, params: dict[str, str] | None = None) -> Iterator[TestListInstance]:
+        """Return performed QA sessions from `qa/testlistinstances`."""
+        return self._typed_paginate("qa/testlistinstances", TestListInstance.from_api, params=params)
+
+    def qa_test_instances(self, params: dict[str, str] | None = None) -> Iterator[TestInstance]:
+        """Return individual QA result rows from `qa/testinstances`."""
+        return self._typed_paginate("qa/testinstances", TestInstance.from_api, params=params)
+
+    def qa_unit_test_collections(self, params: dict[str, str] | None = None) -> Iterator[UnitTestCollection]:
+        """Return unit/test-list assignments from `qa/unittestcollections`."""
+        return self._typed_paginate("qa/unittestcollections", UnitTestCollection.from_api, params=params)
+
+    def units(self, params: dict[str, str] | None = None) -> Iterator[Unit]:
+        """Return treatment/unit records from `units/units`."""
+        return self._typed_paginate("units/units", Unit.from_api, params=params)
+
+    def service_events(self, params: dict[str, str] | None = None) -> Iterator[ServiceEvent]:
+        """Return service event records from `servicelog/serviceevents`."""
+        return self._typed_paginate("servicelog/serviceevents", ServiceEvent.from_api, params=params)
+
+    def service_log_return_to_service_qa(
+        self, params: dict[str, str] | None = None
+    ) -> Iterator[ServiceLogReturnToServiceQA]:
+        """Return service-log RTS QA links from `servicelog/returntoserviceqa`."""
+        return self._typed_paginate(
+            "servicelog/returntoserviceqa",
+            ServiceLogReturnToServiceQA.from_api,
+            params=params,
+        )
+
+    def qa_unit_test_collection(self, endpoint: str) -> UnitTestCollection:
+        """Fetch one unit/test-list assignment by API URL or endpoint."""
+        return UnitTestCollection.from_api(self._get_object(endpoint))
+
+    def unit(self, endpoint: str) -> Unit:
+        """Fetch one unit by API URL or endpoint."""
+        return Unit.from_api(self._get_object(endpoint))
+
+    def _typed_paginate(
+        self,
+        endpoint: str,
+        factory: Callable[[dict], ApiModel],
+        params: dict[str, str] | None = None,
+    ) -> Iterator[ApiModel]:
+        for payload in self.paginate(endpoint, params=params):
+            if not isinstance(payload, dict):
+                raise ValueError(f"Expected object payload from {endpoint}")
+            yield factory(payload)
+
+    def _get_object(self, endpoint: str) -> dict:
+        payload = self.get_json(endpoint)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Expected object payload from {endpoint}")
+        return payload
 
     def _build_url(self, endpoint: str) -> str:
         if not endpoint:
