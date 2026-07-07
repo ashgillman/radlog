@@ -1,7 +1,7 @@
 {
-  "url": "https://radmachine.radformation.com/tcc/api/units/units/2/",
+  "url": "https://radmachine.example/demo-customer/api/units/units/2/",
   "pk": 2,
-  "name": "LA7 - Hayman",
+  "name": "LAx - LinacName",
   "active": true,
   "is_serviceable": true
 }

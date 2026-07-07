@@ -8,12 +8,12 @@ from radlog.renderers.logbook_org import render_candidate as render_generic_org_
 def test_render_generic_org_text() -> None:
     entry = CandidateEntry(
         entry_type="qa_session",
-        group_key="2026-03-06_LA7_daily_qa",
+        group_key="2026-03-06_LAx_daily_qa",
         date="2026-03-06",
         title="Daily QA",
-        site="Hayman",
-        unit="LA7",
-        tags=["Hayman", "LA7"],
+        site="LinacName",
+        unit="LAx",
+        tags=["LinacName", "LAx"],
         performed_items=[
             PerformedItem(category="qa_session", label="Daily QA"),
             PerformedItem(category="Comment", label="Output noted"),
@@ -24,7 +24,7 @@ def test_render_generic_org_text() -> None:
 
     rendered = render_generic_org_candidate(entry)
 
-    assert "**** [2026-03-06 Fri] Daily QA :Hayman:LA7:" in rendered
+    assert "**** [2026-03-06 Fri] Daily QA :LinacName:LAx:" in rendered
     assert "- Daily QA" in rendered
     assert "- Comment :: Output noted" in rendered
     assert "- Review comment" in rendered
@@ -33,27 +33,27 @@ def test_render_generic_org_text() -> None:
 def test_render_linac_mqc_org_text() -> None:
     entry = CandidateEntry(
         entry_type="linac_mqc",
-        group_key="2026-03-06_LA7_linac_monthly",
+        group_key="2026-03-06_LAx_linac_monthly",
         date="2026-03-06",
-        title="LA7 MQC",
-        site="Hayman",
-        unit="LA7",
-        tags=["Hayman", "LA7"],
+        title="LAx MQC",
+        site="LinacName",
+        unit="LAx",
+        tags=["LinacName", "LAx"],
         performed_items=[
             PerformedItem(
                 category="Imaging",
                 label="CatPhan 503",
                 links=[
-                    LinkRef(label="MFOV CCW", url="https://radmachine.radformation.com/tcc/qa/session/details/13805/"),
-                    LinkRef(label="MFOV CWA", url="https://radmachine.radformation.com/tcc/qa/session/details/13806/"),
-                    LinkRef(label="SFOV CCW", url="https://radmachine.radformation.com/tcc/qa/session/details/13807/"),
-                    LinkRef(label="SFOV CW", url="https://radmachine.radformation.com/tcc/qa/session/details/13808/"),
+                    LinkRef(label="MFOV CCW", url="https://radmachine.example/demo-customer/qa/session/details/13805/"),
+                    LinkRef(label="MFOV CWA", url="https://radmachine.example/demo-customer/qa/session/details/13806/"),
+                    LinkRef(label="SFOV CCW", url="https://radmachine.example/demo-customer/qa/session/details/13807/"),
+                    LinkRef(label="SFOV CW", url="https://radmachine.example/demo-customer/qa/session/details/13808/"),
                 ],
             ),
             PerformedItem(
                 category="Winston Lutz",
                 label="6 MV",
-                url="https://radmachine.radformation.com/tcc/qa/session/details/13809/",
+                url="https://radmachine.example/demo-customer/qa/session/details/13809/",
             ),
         ],
         notable_prompts=["<none in source records>"],
@@ -63,12 +63,12 @@ def test_render_linac_mqc_org_text() -> None:
 
     rendered = render_candidate(entry)
 
-    assert "**** [2026-03-06 Fri] LA7 MQC :Hayman:LA7:" in rendered
-    assert ":RM_GROUP_KEY: 2026-03-06_LA7_linac_monthly" in rendered
+    assert "**** [2026-03-06 Fri] LAx MQC :LinacName:LAx:" in rendered
+    assert ":RM_GROUP_KEY: 2026-03-06_LAx_linac_monthly" in rendered
     assert ":RM_SOURCE_IDS: qa:13805,qa:13806,qa:13807,qa:13808,qa:13809" in rendered
     assert "RadMachine links:" not in rendered
-    assert "- Imaging :: CatPhan 503 ([[https://radmachine.radformation.com/tcc/qa/session/details/13805/][MFOV CCW]], [[https://radmachine.radformation.com/tcc/qa/session/details/13806/][MFOV CWA]], [[https://radmachine.radformation.com/tcc/qa/session/details/13807/][SFOV CCW]], [[https://radmachine.radformation.com/tcc/qa/session/details/13808/][SFOV CW]])" in rendered
-    assert "- Winston Lutz :: [[https://radmachine.radformation.com/tcc/qa/session/details/13809/][6 MV]]" in rendered
+    assert "- Imaging :: CatPhan 503 ([[https://radmachine.example/demo-customer/qa/session/details/13805/][MFOV CCW]], [[https://radmachine.example/demo-customer/qa/session/details/13806/][MFOV CWA]], [[https://radmachine.example/demo-customer/qa/session/details/13807/][SFOV CCW]], [[https://radmachine.example/demo-customer/qa/session/details/13808/][SFOV CW]])" in rendered
+    assert "- Winston Lutz :: [[https://radmachine.example/demo-customer/qa/session/details/13809/][6 MV]]" in rendered
     assert "- <none in source records>" in rendered
     assert "Manually enter here" not in rendered
 
@@ -76,12 +76,12 @@ def test_render_linac_mqc_org_text() -> None:
 def test_render_post_pmi_org_text() -> None:
     entry = CandidateEntry(
         entry_type="post_pmi",
-        group_key="2026-03-06_LA7_post_pmi",
+        group_key="2026-03-06_LAx_post_pmi",
         date="2026-03-06",
-        title="LA7 post-PMI",
-        site="Hayman",
-        unit="LA7",
-        tags=["Hayman", "LA7"],
+        title="LAx post-PMI",
+        site="LinacName",
+        unit="LAx",
+        tags=["LinacName", "LAx"],
         performed_items=[
             PerformedItem(
                 category="Dosimetry",
@@ -99,19 +99,19 @@ def test_render_post_pmi_org_text() -> None:
         source_ids=["qa:13162", "qa:13169"],
         metadata={
             "urls": [
-                "https://radmachine.radformation.com/tcc/qa/session/details/13162/",
-                "https://radmachine.radformation.com/tcc/qa/session/details/13169/",
+                "https://radmachine.example/demo-customer/qa/session/details/13162/",
+                "https://radmachine.example/demo-customer/qa/session/details/13169/",
             ]
         },
     )
 
     rendered = render_candidate(entry)
 
-    assert "**** [2026-03-06 Fri] LA7 post-PMI :Hayman:LA7:" in rendered
-    assert ":RM_GROUP_KEY: 2026-03-06_LA7_post_pmi" in rendered
+    assert "**** [2026-03-06 Fri] LAx post-PMI :LinacName:LAx:" in rendered
+    assert ":RM_GROUP_KEY: 2026-03-06_LAx_post_pmi" in rendered
     assert "#+begin_comment" in rendered
     assert "RadMachine links:" in rendered
-    assert "- https://radmachine.radformation.com/tcc/qa/session/details/13162/" in rendered
+    assert "- https://radmachine.example/demo-customer/qa/session/details/13162/" in rendered
     assert "#+end_comment" in rendered
     assert "Maintenance:" in rendered
     assert "- Beam tuning" in rendered
@@ -142,9 +142,9 @@ def test_render_abc_weekly_org_text() -> None:
         unit="ABC",
         tags=["ABCWeekly"],
         performed_items=[
-            PerformedItem(category="ABC 1", label="ABC Weekly QC"),
-            PerformedItem(category="ABC 2", label="ABC Weekly QC"),
-            PerformedItem(category="ABC 3", label="ABC Weekly QC"),
+            PerformedItem(category="ABC x", label="ABC Weekly QC"),
+            PerformedItem(category="ABC x", label="ABC Weekly QC"),
+            PerformedItem(category="ABC x", label="ABC Weekly QC"),
         ],
         notable_prompts=["Split cable near PRS - Elekta still to repair."],
         source_ids=["qa:13611", "qa:13579", "qa:13580"],
@@ -154,9 +154,9 @@ def test_render_abc_weekly_org_text() -> None:
 
     assert "**** [2026-04-07 Tue] ABC Weekly :ABCWeekly:" in rendered
     assert ":RM_GROUP_KEY: 2026-04-07_ABC_abc_weekly" in rendered
-    assert "- ABC 1 :: ABC Weekly QC" in rendered
-    assert "- ABC 2 :: ABC Weekly QC" in rendered
-    assert "- ABC 3 :: ABC Weekly QC" in rendered
+    assert "- ABC x :: ABC Weekly QC" in rendered
+    assert "- ABC x :: ABC Weekly QC" in rendered
+    assert "- ABC x :: ABC Weekly QC" in rendered
     assert "Manually enter here" not in rendered
 
 
@@ -168,7 +168,7 @@ def test_render_abc_ad_hoc_org_text() -> None:
         title="ABC Ad hoc QA",
         site=None,
         unit="ABC",
-        tags=["ABC2"],
+        tags=["ABCx"],
         performed_items=[
             PerformedItem(
                 category="Problem Description",
@@ -181,17 +181,17 @@ def test_render_abc_ad_hoc_org_text() -> None:
         ],
         source_ids=["service:324"],
         metadata={
-            "url": "https://radmachine.radformation.com/tcc/servicelog/event/details/324/",
+            "url": "https://radmachine.example/demo-customer/servicelog/event/details/324/",
             "return_to_service_qa": ["ABC Weekly QC"],
         },
     )
 
     rendered = render_candidate(entry)
 
-    assert "**** [2026-04-14 Tue] ABC Ad hoc QA :ABC2:" in rendered
+    assert "**** [2026-04-14 Tue] ABC Ad hoc QA :ABCx:" in rendered
     assert ":RM_GROUP_KEY: 2026-04-14_ABC_abc_ad_hoc" in rendered
     assert ":RM_SOURCE_IDS: service:324" in rendered
-    assert ":URL: https://radmachine.radformation.com/tcc/servicelog/event/details/324/" in rendered
+    assert ":URL: https://radmachine.example/demo-customer/servicelog/event/details/324/" in rendered
     assert "- Problem Description :: Balloon Tests 3B and 4B have been failing. These are not impacting on clinical performance, but may indicate balloon wear and tear." in rendered
     assert "- Work description :: Elekta replaced the balloon valve." in rendered
     assert "  Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing." in rendered
@@ -207,7 +207,7 @@ def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> Non
         title="ABC Ad hoc QA",
         site=None,
         unit="ABC",
-        tags=["ABC2"],
+        tags=["ABCx"],
         performed_items=[
             PerformedItem(
                 category="Problem Description",
@@ -216,7 +216,7 @@ def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> Non
         ],
         notable_prompts=[],
         source_ids=["service:324"],
-        metadata={"url": "https://radmachine.radformation.com/tcc/servicelog/event/details/324/"},
+        metadata={"url": "https://radmachine.example/demo-customer/servicelog/event/details/324/"},
     )
 
     rendered = render_candidate(entry)

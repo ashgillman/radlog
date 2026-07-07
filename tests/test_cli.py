@@ -202,9 +202,9 @@ token_env = "RADMACHINE_TOKEN"
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
     candidate = CandidateEntry(
         entry_type="linac_mqc",
-        group_key="2026-03-06_LA7_linac_monthly",
+        group_key="2026-03-06_LAx_linac_monthly",
         date="2026-03-06",
-        title="LA7 MQC",
+        title="LAx MQC",
     )
 
     with patch("radlog.cli.collect_qa_sessions", return_value=[{"remote_id": "13162"}]):
@@ -231,7 +231,7 @@ token_env = "RADMACHINE_TOKEN"
     assert exit_code == 0
     assert payload["server"] is None
     assert payload["records"] == [{"remote_id": "13162"}]
-    assert payload["candidates"][0]["group_key"] == "2026-03-06_LA7_linac_monthly"
+    assert payload["candidates"][0]["group_key"] == "2026-03-06_LAx_linac_monthly"
     assert payload["candidates"][0]["rendered_org"] == "rendered org"
     load.assert_called_once_with(
         "radlog.renderers.logbook_org:render_candidate",

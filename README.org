@@ -16,6 +16,8 @@ Current implemented functionality:
 
 - Nix + direnv development environment
 - token-based RadMachine API access via environment variable
+- tolerant dataclass mirrors for commonly used RadMachine API objects, while
+  preserving raw payloads
 - live API probing from the CLI
 - live collection of QA session data from =qa/testlistinstances=
 - lookup and normalization of linked =unittestcollections= and =units/units=
@@ -55,7 +57,7 @@ python -m radlog.cli \
   --collect qa-sessions \
   --start 2026-03-06 \
   --end 2026-03-06 \
-  --param 'unit_test_collection__unit__name=LA7 - Hayman'
+  --param 'unit_test_collection__unit__name=LAx - LinacName'
 #+end_src
 
 - collect grouped QA candidates with rendered Org:
@@ -66,7 +68,7 @@ python -m radlog.cli \
   --collect qa-candidates \
   --start 2026-03-06 \
   --end 2026-03-06 \
-  --param 'unit_test_collection__unit__name=LA7 - Hayman' \
+  --param 'unit_test_collection__unit__name=LAx - LinacName' \
   --limit 20
 #+end_src
 
@@ -82,14 +84,30 @@ The CLI currently emits JSON with:
 
 For =linac_mqc= candidates, =rendered_org= now contains the draft Org text.
 
+* API Model Layer
+
+The Python side keeps a thin mirror of the RadMachine API objects it currently
+uses in =radlog/rm_models.py=.
+
+These models are intentionally partial and tolerant:
+
+- known fields are exposed as attributes
+- unknown fields are preserved in =raw=
+- helper properties expose common concepts such as =remote_id= and
+  =performed_at=
+- normalized workflow models such as =SourceRecord= are still separate
+
+This means code can move away from ad hoc dictionary access without pretending
+the RadMachine API is fully documented or stable.
+
 * Example Draft
 
 Representative current output for a monthly linac QA candidate:
 
 #+begin_example
-**** [2026-03-06 Fri] LA7 MQC :Hayman:LA7:
+**** [2026-03-06 Fri] LAx MQC :LinacName:LAx:
 :PROPERTIES:
-:RM_GROUP_KEY: 2026-03-06_LA7_linac_monthly
+:RM_GROUP_KEY: 2026-03-06_LAx_linac_monthly
 :RM_SOURCE_IDS: qa:13162,qa:13163,qa:13164,qa:13165
 :END:
 Performed as rostered duty:

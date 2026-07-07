@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from radlog.collect import collect_qa_sessions, collect_service_events
+from radlog.collect import (
+    collect_qa_sessions,
+    collect_service_events,
+    collect_service_log_return_to_service_qa,
+)
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
@@ -31,7 +35,7 @@ class FakeClient:
                 "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
             }
         if endpoint.endswith("/2/"):
-            return {"name": "LA7 - Hayman"}
+            return {"name": "LAx - LinacName"}
         raise AssertionError(endpoint)
 
 
@@ -53,8 +57,8 @@ def test_collect_qa_sessions_normalizes_session_records() -> None:
     assert record.performed_at == "2026-03-06T10:10:58+10:00"
     assert record.created_by == "27"
     assert record.title == "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV"
-    assert record.unit == "LA7"
-    assert record.site == "Hayman"
+    assert record.unit == "LAx"
+    assert record.site == "LinacName"
     assert record.status == "reviewed"
     assert record.raw["session"]["site_url"] == f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/qa/session/details/13162/"
     assert client.calls[0] == (
@@ -132,7 +136,7 @@ class EarlyStopClient:
                 "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
             }
         if endpoint.endswith("/2/"):
-            return {"name": "LA7 - Hayman"}
+            return {"name": "LAx - LinacName"}
         raise AssertionError(endpoint)
 
 
@@ -188,7 +192,7 @@ class CacheReuseClient:
                 "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
             }
         if endpoint.endswith("/2/"):
-            return {"name": "LA7 - Hayman"}
+            return {"name": "LAx - LinacName"}
         raise AssertionError(endpoint)
 
 
@@ -235,13 +239,6 @@ class ServiceEventClient:
                 "user_created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
             }
             return
-        if endpoint == "servicelog/returntoserviceqa":
-            yield {
-                "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/returntoserviceqa/854/",
-                "service_event": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/324/",
-                "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/901/",
-            }
-            return
         raise AssertionError(endpoint)
 
     def get_json(self, endpoint: str, params: dict[str, str] | None = None):
@@ -251,13 +248,11 @@ class ServiceEventClient:
                 "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/39/",
             }
         if endpoint.endswith("/39/"):
-            return {"name": "ABC 2"}
+            return {"name": "ABC x"}
         if endpoint.endswith("/2/"):
             return {"name": "Repair"}
         if endpoint.endswith("/1/"):
             return {"name": "Submitted"}
-        if endpoint.endswith("/901/"):
-            return {"name": "ABC Weekly QC"}
         raise AssertionError(endpoint)
 
 
@@ -277,20 +272,54 @@ def test_collect_service_events_normalizes_service_records() -> None:
     assert record.remote_id == "324"
     assert record.performed_at == "2026-04-14T14:46:00+10:00"
     assert record.created_by == "27"
-    assert record.unit == "ABC 2"
+    assert record.unit == "ABC x"
     assert record.title == "Balloon Tests 3B and 4B have been failing."
     assert record.status == "submitted"
     service_event = record.raw["service_event"]
     assert service_event["service_type_name"] == "Repair"
     assert service_event["service_status_name"] == "Submitted"
-    assert service_event["event_url"] == "https://radmachine.radformation.com/tcc/servicelog/event/details/324/"
-    assert service_event["return_to_service_qa"] == ["ABC Weekly QC"]
+    assert service_event["event_url"] == "https://radmachine.example/demo-customer/servicelog/event/details/324/"
     assert client.calls == [
         ("servicelog/serviceevents", {"limit": "100", "ordering": "-datetime_service"}),
-        ("servicelog/returntoserviceqa", {"limit": "100"}),
-        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/901/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/unitserviceareas/61/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/39/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/servicetypes/2/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceeventstatus/1/", None),
     ]
+
+
+class ReturnToServiceQAClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def paginate(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        yield {
+            "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/returntoserviceqa/854/",
+            "datetime_assigned": "2026-05-25T20:46:46+10:00",
+            "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/427/",
+            "test_list_instance": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/14396/",
+            "user_assigned_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
+            "service_event": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/329/",
+        }
+        yield {
+            "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/returntoserviceqa/855/",
+            "service_event": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/330/",
+        }
+
+
+def test_collect_service_log_return_to_service_qa_filters_by_service_event() -> None:
+    client = ReturnToServiceQAClient()
+    service_event_url = f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/329/"
+
+    records = collect_service_log_return_to_service_qa(
+        client,
+        service_event_urls={service_event_url},
+        extra_params={"limit": "2"},
+    )
+
+    assert len(records) == 1
+    assert records[0].remote_id == "854"
+    assert records[0].service_event == service_event_url
+    assert records[0].unit_test_collection.endswith("/427/")
+    assert client.calls == [("servicelog/returntoserviceqa", {"limit": "2"})]

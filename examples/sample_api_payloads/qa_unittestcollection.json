@@ -1,8 +1,8 @@
 {
-  "url": "https://radmachine.radformation.com/tcc/api/qa/unittestcollections/206/",
+  "url": "https://radmachine.example/demo-customer/api/qa/unittestcollections/206/",
   "name": "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
-  "unit": "https://radmachine.radformation.com/tcc/api/units/units/2/",
-  "frequency": "https://radmachine.radformation.com/tcc/api/qa/frequencies/3/",
+  "unit": "https://radmachine.example/demo-customer/api/units/units/2/",
+  "frequency": "https://radmachine.example/demo-customer/api/qa/frequencies/3/",
   "due_date": "2026-04-01T08:00:00+10:00",
-  "last_instance": "https://radmachine.radformation.com/tcc/api/qa/testlistinstances/13162/"
+  "last_instance": "https://radmachine.example/demo-customer/api/qa/testlistinstances/13162/"
 }

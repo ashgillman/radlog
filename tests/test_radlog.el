@@ -33,7 +33,7 @@
 (ert-deftest radlog-skip-future-like-candidates-removes-same-entry-type-when-confirmed ()
   (let ((radlog--candidate-queue
          '(((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-2"))
-           ((entry_type . "linac_mqc") (title . "LA7 MQC") (group_key . "mqc"))
+           ((entry_type . "linac_mqc") (title . "LAx MQC") (group_key . "mqc"))
            ((entry_type . "abc_weekly") (title . "ABC Weekly") (group_key . "week-3")))))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
       (should
@@ -44,7 +44,7 @@
       (should
        (equal
         radlog--candidate-queue
-        '(((entry_type . "linac_mqc") (title . "LA7 MQC") (group_key . "mqc"))))))))
+        '(((entry_type . "linac_mqc") (title . "LAx MQC") (group_key . "mqc"))))))))
 
 (ert-deftest radlog-skip-future-like-candidates-keeps-queue-when-declined ()
   (let ((radlog--candidate-queue

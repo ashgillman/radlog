@@ -11,7 +11,14 @@
 
 * TODO Normalized models
 - [ ] Define validation / parsing layer for raw payloads
-- [ ] Preserve raw payload snapshots in normalized models for debugging
+
+* TODO General RadMachine interface
+- [ ] Add typed convenience methods around common QA endpoints
+- [ ] Add typed convenience methods around common servicelog endpoints
+- [ ] Define safe write/create helpers for test entries behind explicit CLI flags
+- [ ] Add raw payload backup/export commands for selected endpoints and date ranges
+- [ ] Add examples for pulling third-party data into candidate test entries
+- [ ] Add examples for composing multiple test entries into a derived entry
 
 * TODO Classification
 - [ ] Write classifier for annual QA
@@ -54,7 +61,7 @@
 
 * TODO Fixtures and examples
 - [ ] Capture real redacted payloads for:
-  - [ ] LA7 MQC-like record set
+  - [ ] LAx MQC-like record set
   - [ ] CT monthly QA-like record set
   - [ ] service event
   - [ ] fault

@@ -1,13 +1,13 @@
 {
-  "url": "https://radmachine.radformation.com/tcc/api/servicelog/serviceevents/324/",
+  "url": "https://radmachine.example/demo-customer/api/servicelog/serviceevents/324/",
   "datetime_created": "2026-04-14T15:57:46.240311+10:00",
   "datetime_modified": null,
   "datetime_service": "2026-04-14T14:46:00+10:00",
   "problem_description": "Balloon Tests 3B and 4B have been failing.",
   "work_description": "Elekta replaced the balloon valve.\n\nPerformed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing.",
   "is_review_required": true,
-  "unit_service_area": "https://radmachine.radformation.com/tcc/api/servicelog/unitserviceareas/61/",
-  "service_type": "https://radmachine.radformation.com/tcc/api/servicelog/servicetypes/2/",
-  "service_status": "https://radmachine.radformation.com/tcc/api/servicelog/serviceeventstatus/1/",
-  "user_created_by": "https://radmachine.radformation.com/tcc/api/auth/users/27/"
+  "unit_service_area": "https://radmachine.example/demo-customer/api/servicelog/unitserviceareas/61/",
+  "service_type": "https://radmachine.example/demo-customer/api/servicelog/servicetypes/2/",
+  "service_status": "https://radmachine.example/demo-customer/api/servicelog/serviceeventstatus/1/",
+  "user_created_by": "https://radmachine.example/demo-customer/api/auth/users/27/"
 }

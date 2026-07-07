@@ -10,8 +10,8 @@ def _record(title: str) -> SourceRecord:
         source_type="qa_session",
         remote_id="1",
         performed_at="2026-03-30T08:00:00+10:00",
-        unit="LA7",
-        site="Hayman",
+        unit="LAx",
+        site="LinacName",
         title=title,
     )
 
