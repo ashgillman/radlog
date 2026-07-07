@@ -74,6 +74,34 @@ python -m radlog.cli \
   --limit 20
 #+end_src
 
+- export raw RadMachine records without transforming them:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --export-raw qa-testlistinstances \
+  --limit 100
+#+end_src
+
+Raw export mode is for saving or inspecting the exact JSON records returned by
+RadMachine. It does not group records, render Org, update logbooks, or write
+back to RadMachine. It is useful before developing transformations such as:
+
+- building a report from known API records
+- composing a derived test entry from existing test entries
+- keeping an audit snapshot before experimenting with write/create features
+
+Filters are passed through as query parameters:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --export-raw qa-testinstances \
+  --param 'skipped=False' \
+  --param 'ordering=-work_completed' \
+  --limit 100
+#+end_src
+
 * Current Output Shape
 
 The CLI currently emits JSON with:
@@ -83,6 +111,7 @@ The CLI currently emits JSON with:
 - =server= for raw endpoint probes
 - =records= for normalized source records
 - =candidates= for grouped entries
+- =raw_export= for unmodified API records from =--export-raw=
 
 For =linac_mqc= candidates, =rendered_org= now contains the draft Org text.
 

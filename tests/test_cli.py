@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from radlog.cli import main
 from radlog.models import CandidateEntry
+from radlog.rm_models import TestListInstance as RmTestListInstance
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
@@ -101,6 +102,77 @@ token_env = "RADMACHINE_TOKEN"
     assert payload["server"] == [{"id": 1}, {"id": 2}]
     assert payload["records"] is None
     paginate.assert_called_once_with("qa/", params={})
+
+
+def test_cli_exports_named_endpoint_as_raw_payloads(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    raw_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/13162/",
+        "work_completed": "2026-03-06T10:10:00+10:00",
+        "unexpected": "preserved",
+    }
+
+    with patch(
+        "radlog.cli.RadMachineClient.qa_test_list_instances",
+        return_value=iter([RmTestListInstance.from_api(raw_payload)]),
+    ) as export_raw:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--export-raw",
+                "qa-testlistinstances",
+                "--limit",
+                "1",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] is None
+    assert payload["raw_export"] == [raw_payload]
+    export_raw.assert_called_once_with(params={"limit": "1"})
+
+
+def test_cli_rejects_collect_with_raw_export(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_file),
+            "--collect",
+            "qa-sessions",
+            "--export-raw",
+            "qa-testlistinstances",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "--export-raw cannot be combined with --collect" in captured.err
 
 
 def test_cli_supports_custom_query_params(capsys, tmp_path, monkeypatch) -> None:

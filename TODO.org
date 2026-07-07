@@ -14,7 +14,7 @@
 
 * TODO General RadMachine interface
 - [ ] Define safe write/create helpers for test entries behind explicit CLI flags
-- [ ] Add raw payload backup/export commands for selected endpoints and date ranges
+- [ ] Add date-range/filter presets to raw payload export mode
 - [ ] Add examples for pulling third-party data into candidate test entries
 - [ ] Add examples for composing multiple test entries into a derived entry
 
