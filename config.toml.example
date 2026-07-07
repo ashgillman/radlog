@@ -7,3 +7,17 @@ token_env = "RADMACHINE_TOKEN"
 [logbook]
 default_file = "~/org/teap-logbook.org"
 timezone = "Australia/Brisbane"
+
+[extensions]
+# Add directories containing user extension modules, for example:
+# paths = ["~/.config/radlog", "./examples"]
+paths = ["./examples"]
+
+[grouping]
+# Object in MODULE:ATTRIBUTE form. The object should provide the methods used by
+# radlog.group.GroupingRules.
+rules = "group_tcc_similar:RULES"
+
+[render]
+# Callable in MODULE:ATTRIBUTE form.
+logbook_org_renderer = "render_ag_org:render_candidate"

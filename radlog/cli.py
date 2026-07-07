@@ -13,6 +13,7 @@ import requests
 from .api import RadMachineClient
 from .collect import collect_qa_sessions, collect_service_events, serialize_source_records
 from .config import ConfigError, load_config
+from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
 
 
@@ -92,7 +93,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             server_payload = None
             collected_payload = serialize_source_records(records)
-            candidate_payload = serialize_candidate_entries(group_source_records(records))
+            renderer = load_callable(
+                config.render.logbook_org_renderer,
+                search_paths=config.extensions.paths,
+            )
+            rules = load_object(
+                config.grouping.rules,
+                search_paths=config.extensions.paths,
+            )
+            candidates = group_source_records(records, rules=rules)
+            for candidate in candidates:
+                candidate.rendered_org = renderer(candidate)
+            candidate_payload = serialize_candidate_entries(candidates)
         else:
             server_payload = (
                 list(client.paginate(args.endpoint, params=params))

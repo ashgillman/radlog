@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from radlog.config import ConfigError, get_token, load_config, validate_radmachine_config
+from radlog.extensions import load_callable
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
@@ -26,10 +27,15 @@ timezone = "Australia/Brisbane"
 
 [grouping]
 merge_same_day_same_unit = true
+rules = "custom_rules:RULES"
 
 [render]
 include_durations = true
 include_flagged_items = false
+logbook_org_renderer = "custom_renderer:render"
+
+[extensions]
+paths = ["~/radlog-extensions"]
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
 
@@ -40,7 +46,10 @@ include_flagged_items = false
     assert config.radmachine.username == "tester"
     assert config.logbook.default_file == "~/org/logbook.org"
     assert config.grouping.merge_same_day_same_unit is True
+    assert config.grouping.rules == "custom_rules:RULES"
     assert config.render.include_flagged_items is False
+    assert config.render.logbook_org_renderer == "custom_renderer:render"
+    assert config.extensions.paths == ["~/radlog-extensions"]
 
 
 def test_get_token_reads_environment_variable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,3 +94,22 @@ def test_validate_radmachine_config_requires_base_url_and_customer_id(tmp_path: 
 
     with pytest.raises(ConfigError):
         validate_radmachine_config(config)
+
+
+def test_load_callable_imports_from_extension_path(tmp_path: Path) -> None:
+    extension_file = tmp_path / "custom_renderer.py"
+    extension_file.write_text(
+        """
+def render(candidate):
+    return candidate.title
+""".strip()
+    )
+
+    renderer = load_callable("custom_renderer:render", search_paths=[str(tmp_path)])
+
+    assert renderer(type("Candidate", (), {"title": "Rendered"})()) == "Rendered"
+
+
+def test_load_callable_rejects_invalid_spec() -> None:
+    with pytest.raises(ConfigError):
+        load_callable("custom_renderer.render")

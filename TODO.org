@@ -49,7 +49,6 @@
 - [ ] Add configurable logbook path
 - [ ] Add configurable destination heading/subtree
 - [ ] Add configurable render style per entry type
-- [ ] Add configurable grouping rules
 - [ ] Add configurable username default
 - [ ] Add configurable timezone
 

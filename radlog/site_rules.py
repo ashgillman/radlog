@@ -1,352 +1,70 @@
-"""Site-specific rules for grouping and display.
-
-New sites should treat this module as the main place to adapt local naming,
-equipment conventions, and similar department-specific behavior.
-"""
+"""Default grouping rules with no site-specific policy."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import Any
 
-from .models import LinkRef, PerformedItem, SourceRecord
-
-
-def equipment_group(record: SourceRecord) -> str | None:
-    """Return a broad equipment group for the record."""
-    unit = record.unit or ""
-    if unit.startswith("LA"):
-        return "linac"
-    if unit.startswith("ABC"):
-        return "abc"
-    return None
+from .models import CandidateEntry, PerformedItem, SourceRecord
 
 
-def collection_frequency_name(record: SourceRecord) -> str | None:
-    """Return a normalized frequency name for the linked collection."""
-    collection = record.raw.get("unit_test_collection", {})
-    if not isinstance(collection, dict):
+class SiteRules:
+    """Conservative default rules for source-record grouping.
+
+    Real logbook workflows should usually provide their own rules object via
+    `[grouping].rules`.
+    """
+
+    def prepare(self, records: list[SourceRecord]) -> Any:
         return None
 
-    frequency = collection.get("frequency")
-    if not isinstance(frequency, str):
-        return None
+    def include_record(self, record: SourceRecord, context: Any) -> bool:
+        return bool(record.performed_at and record.unit)
 
-    frequency_id = frequency.rstrip("/").rsplit("/", 1)[-1]
-    if frequency_id == "3":
-        return "monthly"
-
-    return None
-
-
-def resolve_entry_type(entry_type: str, records: Iterable[SourceRecord]) -> str:
-    """Apply site-specific entry type overrides after grouping."""
-    record_list = list(records)
-    if entry_type == "linac_mqc" and _looks_like_post_pmi(record_list):
-        return "post_pmi"
-    return entry_type
-
-
-def additional_notable_prompts(entry_type: str, records: Iterable[SourceRecord]) -> list[str]:
-    """Return extra site-specific prompt lines for a grouped entry."""
-    _ = list(records)
-    if entry_type == "post_pmi":
-        return ["Linac ready for clinical use. Re-enable energies and document on MOSAIQ."]
-    return []
-
-
-def map_performed_item(record: SourceRecord, entry_type: str) -> PerformedItem:
-    """Map a source record to the displayed performed-item text."""
-    if entry_type in {"linac_mqc", "post_pmi"}:
-        return _map_linac_mqc_performed_item(record)
-    if entry_type == "abc_weekly":
-        return PerformedItem(category=record.unit or "ABC", label=record.title or record.remote_id)
-    if entry_type in {"abc_ad_hoc", "linac_ad_hoc"}:
-        service_event = record.raw.get("service_event", {})
-        if isinstance(service_event, dict):
-            category = str(service_event.get("service_type_name") or "Service").strip()
-            return PerformedItem(category=category, label=record.title or record.remote_id)
-
-    title = record.title or record.remote_id
-    return PerformedItem(category="QA", label=title)
-
-
-def aggregate_performed_items(entry_type: str, items: Iterable[PerformedItem]) -> list[PerformedItem]:
-    """Collapse mapped items into authored summaries where useful."""
-    item_list = list(items)
-    if entry_type == "linac_mqc":
-        return _aggregate_linac_mqc_items(item_list)
-    if entry_type == "post_pmi":
-        return _aggregate_post_pmi_items(item_list)
-    return item_list
-
-
-def _map_linac_mqc_performed_item(record: SourceRecord) -> PerformedItem:
-    title = (record.title or record.remote_id).strip()
-    session_url = _session_site_url(record)
-
-    if title.startswith("Linac Monthly :: Imaging :: CatPhan 503 :: "):
-        scan = title.removeprefix("Linac Monthly :: Imaging :: CatPhan 503 :: ").strip()
-        return PerformedItem(category="Imaging", label=scan, url=session_url)
-
-    if title == "Winston Lutz :: eQA :: 6 MV":
-        return PerformedItem(category="Winston Lutz", label="6 MV", url=session_url)
-
-    if title == "Linac Monthly :: Mechanical":
-        return PerformedItem(category="Mechanical", label="Machine mechanical measurements", url=session_url)
-
-    if title == "Linac Monthly :: Safety and Functionality":
-        return PerformedItem(
-            category="Safety and Functionality",
-            label="Mechanical drive and interlocks",
-            url=session_url,
+    def record_sort_key(self, record: SourceRecord) -> tuple[str, str, str]:
+        return (
+            record.performed_at or "",
+            record.unit or "",
+            record.title or "",
         )
 
-    if title.startswith("Linac Monthly :: Geometry :: "):
-        label = title.removeprefix("Linac Monthly :: Geometry :: ").strip()
-        return PerformedItem(category="Geometry", label=label, url=session_url)
-
-    if title.startswith("Linac Monthly :: Dosimetry :: "):
-        label = title.removeprefix("Linac Monthly :: Dosimetry :: ").strip()
-        return PerformedItem(category="Dosimetry", label=label, url=session_url)
-
-    if title.startswith("Reference dosimetry :: "):
-        return PerformedItem(category="Ad hoc", label=title, url=session_url)
-
-    if title == "EPID image quality (PTW EPID QC)":
-        return PerformedItem(category="EPID Image Quality", label='Contrast visibility', url=session_url)
-
-    if title == "Linac Monthly :: MLC :: Leaf speed constancy":
-        return PerformedItem(category="MLC", label="Leaf speed constancy", url=session_url)
-
-    if title == "Linac Monthly :: MLC :: Sliding window fluence uniformity":
-        return PerformedItem(category="MLC", label="Sliding window fluence uniformity", url=session_url)
-
-    if title == "Linac Monthly :: MLC :: VMAT Dose Rate & Gantry Speed (DRGS) + Dynamic MLC Picket Fence":
-        return PerformedItem(
-            category="MLC",
-            label="VMAT Dose Rate & Gantry Speed (DRGS) + Dynamic MLC Picket Fence",
-            url=session_url,
+    def bucket_key(self, record: SourceRecord, context: Any) -> tuple[str, str, str]:
+        if not record.performed_at or not record.unit:
+            raise ValueError("Cannot bucket a record without performed_at and unit")
+        return (
+            record.performed_at[:10],
+            record.unit,
+            record.title or record.source_type,
         )
 
-    if title.startswith("Linac Monthly :: MLC :: Picket Fence :: "):
-        parts = [part.strip() for part in title.split("::")]
-        if len(parts) >= 5:
-            panel = parts[3]
-            gantry = parts[4]
-            return PerformedItem(category="MLC", label=f"Picket Fence: {gantry} {panel}", url=session_url)
+    def build_candidate(
+        self,
+        bucket_key: tuple[str, str, str],
+        records: list[SourceRecord],
+        context: Any,
+    ) -> CandidateEntry:
+        date, unit, label = bucket_key
+        first = records[0]
+        site = first.site
+        title = first.title or label
 
-    if title.startswith("Linac Monthly :: MLC :: "):
-        label = title.removeprefix("Linac Monthly :: MLC :: ").strip()
-        return PerformedItem(category="MLC", label=label, url=session_url)
-
-    parts = [part.strip() for part in title.split("::")]
-    if len(parts) == 1:
-        return PerformedItem(category="QA", label=title, url=session_url)
-    return PerformedItem(category=parts[0], label=" :: ".join(parts[1:]), url=session_url)
-
-
-def _aggregate_linac_mqc_items(items: list[PerformedItem]) -> list[PerformedItem]:
-    grouped: list[PerformedItem] = []
-    handled: set[tuple[str, str]] = set()
-
-    imaging_items = [item for item in items if item.category == "Imaging"]
-    imaging_labels = {item.label for item in imaging_items}
-    if imaging_labels:
-        grouped.append(
-            PerformedItem(
-                category="Imaging",
-                label="CatPhan 503",
-                links=_ordered_links(imaging_items, ["MFOV CCW", "MFOV CW", "SFOV CCW", "SFOV CW"]),
-            )
-        )
-        handled.update({("Imaging", label) for label in imaging_labels})
-
-    winston_items = [item for item in items if item.category == "Winston Lutz"]
-    if winston_items:
-        grouped.append(PerformedItem(category="Winston Lutz", label="6 MV", url=winston_items[0].url))
-        handled.update({(item.category, item.label) for item in winston_items})
-
-    mechanical_items = [item for item in items if item.category == "Mechanical"]
-    if mechanical_items:
-        grouped.append(
-            PerformedItem(
-                category="Mechanical",
-                label="Machine mechanical measurements",
-                url=mechanical_items[0].url,
-            )
-        )
-        handled.update({(item.category, item.label) for item in mechanical_items})
-
-    safety_items = [item for item in items if item.category == "Safety and Functionality"]
-    if safety_items:
-        grouped.append(
-            PerformedItem(
-                category="Safety and Functionality",
-                label="Mechanical drive and interlocks",
-                url=safety_items[0].url,
-            )
-        )
-        handled.update({(item.category, item.label) for item in safety_items})
-
-    geometry_order = ["EPID scaling", "Light vs radiation", "Jaw drive accuracy"]
-    geometry_items = [item for item in items if item.category == "Geometry"]
-    geometry_seen = {item.label for item in geometry_items}
-    geometry_labels = [label for label in geometry_order if label in geometry_seen]
-    if geometry_labels:
-        grouped.append(
-            PerformedItem(
-                category="Geometry",
-                label=", ".join(_display_geometry_label(label) for label in geometry_labels),
-                links=_ordered_links(geometry_items, geometry_order),
-            )
-        )
-        handled.update({("Geometry", label) for label in geometry_labels})
-
-    epid_items = [item for item in items if item.category == "EPID Image Quality"]
-    if epid_items:
-        grouped.append(
-            PerformedItem(category="EPID Image Quality", label="Contrast visibility", url=epid_items[0].url)
-        )
-        handled.update({(item.category, item.label) for item in epid_items})
-
-    mlc_items = [item for item in items if item.category == "MLC"]
-    mlc_labels = {item.label for item in mlc_items}
-    if mlc_labels:
-        grouped.append(
-            PerformedItem(
-                category="MLC",
-                label=_summarize_mlc_items(mlc_labels),
-                links=[LinkRef(label=item.label, url=item.url) for item in mlc_items if item.url],
-            )
-        )
-        handled.update({("MLC", label) for label in mlc_labels})
-
-    for item in items:
-        if (item.category, item.label) not in handled:
-            grouped.append(item)
-
-    return grouped
-
-
-def _aggregate_post_pmi_items(items: list[PerformedItem]) -> list[PerformedItem]:
-    grouped: list[PerformedItem] = []
-    handled: set[tuple[str, str]] = set()
-
-    if any(item.category == "Safety and Functionality" for item in items):
-        grouped.append(
-            PerformedItem(category="Safety and Functionality", label="Mechanical drive and interlocks")
-        )
-        handled.update(
-            {(item.category, item.label) for item in items if item.category == "Safety and Functionality"}
+        return CandidateEntry(
+            entry_type=first.source_type,
+            group_key=f"{date}_{unit}_{_compact_key(label)}",
+            date=date,
+            title=title,
+            site=site,
+            unit=unit,
+            tags=[tag for tag in (site, unit) if tag],
+            performed_items=[
+                PerformedItem(category=record.source_type, label=record.title or record.remote_id)
+                for record in records
+            ],
+            source_ids=[f"{record.source_type}:{record.remote_id}" for record in records],
         )
 
-    mlc_labels = {item.label for item in items if item.category == "MLC"}
-    if mlc_labels:
-        grouped.append(PerformedItem(category="MLC", label=_summarize_mlc_items(mlc_labels)))
-        handled.update({("MLC", label) for label in mlc_labels})
 
-    dosimetry_labels = {item.label for item in items if item.category == "Dosimetry"}
-    if dosimetry_labels:
-        if _has_full_post_pmi_dosimetry(dosimetry_labels):
-            grouped.append(
-                PerformedItem(
-                    category="Dosimetry",
-                    label="Photon and electron profile, output and energy constancy, all energies",
-                )
-            )
-            handled.update(
-                {
-                    ("Dosimetry", label)
-                    for label in dosimetry_labels
-                    if label != "Quickcheck Constancy"
-                }
-            )
-
-        if "Quickcheck Constancy" in dosimetry_labels:
-            grouped.append(PerformedItem(category="Dosimetry", label="Quickcheck Constancy"))
-            handled.add(("Dosimetry", "Quickcheck Constancy"))
-
-    for item in items:
-        if (item.category, item.label) not in handled:
-            grouped.append(item)
-
-    return grouped
+def _compact_key(value: str) -> str:
+    return "_".join(value.lower().split())
 
 
-def _summarize_catphan_scans(labels: set[str]) -> str:
-    expected = {"MFOV CCW", "SFOV CW", "SFOV CCW", "MFOV CW"}
-    if expected.issubset(labels):
-        return "CatPhan 503 (MFOV+SFOV x CW+CCW)"
-    if len(labels) == 1:
-        scan = next(iter(labels))
-        return f"CatPhan 503 ({scan})"
-    return "CatPhan 503 (" + "+".join(sorted(labels)) + ")"
-
-
-def _display_geometry_label(label: str) -> str:
-    if label == "Light vs radiation":
-        return "light vs. radiation"
-    if label == "Jaw drive accuracy":
-        return "jaw drive accuracy"
-    return label
-
-
-def _summarize_mlc_items(labels: set[str]) -> str:
-    summary: list[str] = []
-
-    if "Leaf speed constancy" in labels:
-        summary.append("Leaf speed constancy")
-
-    if (
-        "Sliding window fluence uniformity" in labels
-        or "VMAT Dose Rate & Gantry Speed (DRGS) + Dynamic MLC Picket Fence" in labels
-    ):
-        summary.append("DRGS")
-
-    if any(label.startswith("Picket Fence: ") for label in labels):
-        summary.append("Picket fence by gantry angle")
-
-    return ", ".join(summary)
-
-
-def _has_full_post_pmi_dosimetry(labels: set[str]) -> bool:
-    required = {
-        "Photon profile constancy",
-        "Electron profile constancy",
-        "Output and relative dosimetry :: 6 MV",
-        "Output and relative dosimetry :: 10 MV",
-        "Output and energy constancy :: 6 MeV",
-        "Output and energy constancy :: 8 MeV",
-        "Output and energy constancy :: 10 MeV",
-        "Output and energy constancy :: 12 MeV",
-        "Output and energy constancy :: 15 MeV",
-    }
-    return required.issubset(labels)
-
-
-def _looks_like_post_pmi(records: list[SourceRecord]) -> bool:
-    titles = [(record.title or "").lower() for record in records]
-    dosimetry_count = sum("linac monthly :: dosimetry ::" in title for title in titles)
-    has_profiles = any("profile constancy" in title for title in titles)
-    return dosimetry_count >= 3 and has_profiles
-
-
-def _session_site_url(record: SourceRecord) -> str | None:
-    session = record.raw.get("session", {})
-    if not isinstance(session, dict):
-        return None
-    url = str(session.get("site_url", "")).strip()
-    return url or None
-
-
-def _ordered_links(items: list[PerformedItem], label_order: list[str]) -> list[LinkRef]:
-    item_by_label = {item.label: item for item in items if item.url}
-    links: list[LinkRef] = []
-    for label in label_order:
-        item = item_by_label.get(label)
-        if item and item.url:
-            links.append(LinkRef(label=label, url=item.url))
-    for item in items:
-        if item.url and item.label not in label_order:
-            links.append(LinkRef(label=item.label, url=item.url))
-    return links
+DEFAULT_RULES = SiteRules()

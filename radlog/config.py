@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 from typing import Any
@@ -31,12 +31,19 @@ class LogbookConfig:
 @dataclass(slots=True)
 class GroupingConfig:
     merge_same_day_same_unit: bool = True
+    rules: str = "radlog.site_rules:DEFAULT_RULES"
 
 
 @dataclass(slots=True)
 class RenderConfig:
     include_durations: bool = True
     include_flagged_items: bool = True
+    logbook_org_renderer: str = "radlog.renderers.logbook_org:render_candidate"
+
+
+@dataclass(slots=True)
+class ExtensionsConfig:
+    paths: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -45,6 +52,7 @@ class Config:
     logbook: LogbookConfig
     grouping: GroupingConfig
     render: RenderConfig
+    extensions: ExtensionsConfig
 
 
 class ConfigError(ValueError):
@@ -58,6 +66,7 @@ def load_config(path: str | Path) -> Config:
         logbook=LogbookConfig(**raw.get("logbook", {})),
         grouping=GroupingConfig(**raw.get("grouping", {})),
         render=RenderConfig(**raw.get("render", {})),
+        extensions=ExtensionsConfig(**raw.get("extensions", {})),
     )
 
 

@@ -1,7 +1,33 @@
 from __future__ import annotations
 
+from examples.render_ag_org import render_candidate
 from radlog.models import CandidateEntry, LinkRef, PerformedItem
-from radlog.render import render_candidate
+from radlog.renderers.logbook_org import render_candidate as render_generic_org_candidate
+
+
+def test_render_generic_org_text() -> None:
+    entry = CandidateEntry(
+        entry_type="qa_session",
+        group_key="2026-03-06_LA7_daily_qa",
+        date="2026-03-06",
+        title="Daily QA",
+        site="Hayman",
+        unit="LA7",
+        tags=["Hayman", "LA7"],
+        performed_items=[
+            PerformedItem(category="qa_session", label="Daily QA"),
+            PerformedItem(category="Comment", label="Output noted"),
+        ],
+        notable_prompts=["Review comment"],
+        source_ids=["qa_session:1"],
+    )
+
+    rendered = render_generic_org_candidate(entry)
+
+    assert "**** [2026-03-06 Fri] Daily QA :Hayman:LA7:" in rendered
+    assert "- Daily QA" in rendered
+    assert "- Comment :: Output noted" in rendered
+    assert "- Review comment" in rendered
 
 
 def test_render_linac_mqc_org_text() -> None:

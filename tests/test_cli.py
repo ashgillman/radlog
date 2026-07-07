@@ -4,6 +4,7 @@ import json
 from unittest.mock import patch
 
 from radlog.cli import main
+from radlog.models import CandidateEntry
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
@@ -199,15 +200,18 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    candidate = CandidateEntry(
+        entry_type="linac_mqc",
+        group_key="2026-03-06_LA7_linac_monthly",
+        date="2026-03-06",
+        title="LA7 MQC",
+    )
 
     with patch("radlog.cli.collect_qa_sessions", return_value=[{"remote_id": "13162"}]):
         with patch("radlog.cli.collect_service_events", return_value=[]):
             with patch("radlog.cli.serialize_source_records", return_value=[{"remote_id": "13162"}]):
-                with patch("radlog.cli.group_source_records", return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}]):
-                    with patch(
-                        "radlog.cli.serialize_candidate_entries",
-                        return_value=[{"group_key": "2026-03-06_LA7_linac_monthly"}],
-                    ):
+                with patch("radlog.cli.group_source_records", return_value=[candidate]):
+                    with patch("radlog.cli.load_callable", return_value=lambda candidate: "rendered org") as load:
                         exit_code = main(
                             [
                                 "--config",
@@ -227,7 +231,12 @@ token_env = "RADMACHINE_TOKEN"
     assert exit_code == 0
     assert payload["server"] is None
     assert payload["records"] == [{"remote_id": "13162"}]
-    assert payload["candidates"] == [{"group_key": "2026-03-06_LA7_linac_monthly"}]
+    assert payload["candidates"][0]["group_key"] == "2026-03-06_LA7_linac_monthly"
+    assert payload["candidates"][0]["rendered_org"] == "rendered org"
+    load.assert_called_once_with(
+        "radlog.renderers.logbook_org:render_candidate",
+        search_paths=[],
+    )
 
 
 def test_cli_collects_service_events_into_candidates(capsys, tmp_path, monkeypatch) -> None:
@@ -242,6 +251,12 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    candidate = CandidateEntry(
+        entry_type="abc_ad_hoc",
+        group_key="2026-04-14_ABC_abc_ad_hoc",
+        date="2026-04-14",
+        title="ABC Ad hoc QA",
+    )
 
     with patch("radlog.cli.collect_qa_sessions", return_value=[]):
         with patch("radlog.cli.collect_service_events", return_value=[{"remote_id": "324", "source_type": "service_event"}]):
@@ -249,14 +264,8 @@ token_env = "RADMACHINE_TOKEN"
                 "radlog.cli.serialize_source_records",
                 return_value=[{"remote_id": "324", "source_type": "service_event"}],
             ):
-                with patch(
-                    "radlog.cli.group_source_records",
-                    return_value=[{"group_key": "2026-04-14_ABC_abc_ad_hoc"}],
-                ):
-                    with patch(
-                        "radlog.cli.serialize_candidate_entries",
-                        return_value=[{"group_key": "2026-04-14_ABC_abc_ad_hoc"}],
-                    ):
+                with patch("radlog.cli.group_source_records", return_value=[candidate]):
+                    with patch("radlog.cli.load_callable", return_value=lambda candidate: "rendered service org"):
                         exit_code = main(
                             [
                                 "--config",
@@ -275,7 +284,8 @@ token_env = "RADMACHINE_TOKEN"
 
     assert exit_code == 0
     assert payload["records"] == [{"remote_id": "324", "source_type": "service_event"}]
-    assert payload["candidates"] == [{"group_key": "2026-04-14_ABC_abc_ad_hoc"}]
+    assert payload["candidates"][0]["group_key"] == "2026-04-14_ABC_abc_ad_hoc"
+    assert payload["candidates"][0]["rendered_org"] == "rendered service org"
 
 
 def test_cli_rejects_invalid_param(capsys, tmp_path, monkeypatch) -> None:

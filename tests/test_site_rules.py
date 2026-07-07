@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from examples.group_tcc_similar import aggregate_performed_items, map_performed_item
 from radlog.models import SourceRecord
 from radlog.models import PerformedItem
-from radlog.site_rules import aggregate_performed_items, map_performed_item
 
 
 def _record(title: str) -> SourceRecord:

@@ -1,7 +1,32 @@
 from __future__ import annotations
 
+from examples.group_tcc_similar import RULES
 from radlog.group import group_source_records
 from radlog.models import SourceRecord
+
+
+def test_group_source_records_uses_generic_default_rules() -> None:
+    record = SourceRecord(
+        source_type="qa_session",
+        remote_id="1",
+        performed_at="2026-03-30T08:00:00+10:00",
+        unit="Unit 1",
+        site="Site",
+        title="Daily QA",
+    )
+
+    entries = group_source_records([record])
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "qa_session"
+    assert entry.group_key == "2026-03-30_Unit 1_daily_qa"
+    assert entry.title == "Daily QA"
+    assert entry.tags == ["Site", "Unit 1"]
+    assert entry.source_ids == ["qa_session:1"]
+    assert [(item.category, item.label) for item in entry.performed_items] == [
+        ("qa_session", "Daily QA"),
+    ]
 
 
 def _record(
@@ -55,7 +80,7 @@ def test_group_source_records_merges_linac_monthly_sessions() -> None:
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     assert len(entries) == 1
     entry = entries[0]
@@ -90,7 +115,7 @@ def test_group_source_records_folds_same_day_reference_dosimetry_into_existing_m
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     assert len(entries) == 1
     entry = entries[0]
@@ -128,7 +153,7 @@ def test_group_source_records_groups_abc_weekly_entries() -> None:
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     assert len(entries) == 1
     entry = entries[0]
@@ -163,7 +188,7 @@ def test_group_source_records_routes_abc_service_events_to_abc_ad_hoc() -> None:
         },
     )
 
-    entries = group_source_records([record])
+    entries = group_source_records([record], rules=RULES)
 
     assert len(entries) == 1
     entry = entries[0]
@@ -232,7 +257,7 @@ def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     linac_entries = [entry for entry in entries if entry.entry_type == "linac_mqc"]
     assert len(linac_entries) == 1
@@ -277,7 +302,7 @@ def test_group_source_records_avoids_duplicate_monthly_item_names() -> None:
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     entry = next(entry for entry in entries if entry.entry_type == "linac_mqc")
     assert [(item.category, item.label) for item in entry.performed_items] == [
@@ -435,7 +460,7 @@ def test_group_source_records_collapses_linac_monthly_items_into_authored_summar
         ),
     ]
 
-    entry = group_source_records(records)[0]
+    entry = group_source_records(records, rules=RULES)[0]
 
     assert [(item.category, item.label) for item in entry.performed_items] == [
         ("Imaging", "CatPhan 503"),
@@ -472,7 +497,7 @@ def test_group_source_records_folds_same_day_reference_dosimetry_into_linac_mont
         ),
     ]
 
-    entries = group_source_records(records)
+    entries = group_source_records(records, rules=RULES)
 
     assert len(entries) == 1
     entry = entries[0]
@@ -606,7 +631,7 @@ def test_group_source_records_promotes_monthly_linac_to_post_pmi_when_full_dosim
         ),
     ]
 
-    entry = group_source_records(records)[0]
+    entry = group_source_records(records, rules=RULES)[0]
 
     assert entry.entry_type == "post_pmi"
     assert entry.group_key == "2026-03-06_LA7_post_pmi"
