@@ -97,10 +97,16 @@ Filters are passed through as query parameters:
 python -m radlog.cli \
   --config config.toml \
   --export-raw qa-testinstances \
+  --start 2026-03-01 \
+  --end 2026-03-31 \
   --param 'skipped=False' \
-  --param 'ordering=-work_completed' \
   --limit 100
 #+end_src
+
+For raw export targets with a known date field, =--start= and =--end= filter
+the returned records client-side and add a sensible default ordering if one was
+not supplied. This avoids guessing undocumented RadMachine range-filter names.
+Explicit =--param ordering=...= values are preserved.
 
 * Current Output Shape
 

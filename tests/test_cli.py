@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from radlog.cli import main
 from radlog.models import CandidateEntry
+from radlog.rm_models import ServiceEvent
 from radlog.rm_models import TestListInstance as RmTestListInstance
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
@@ -142,7 +143,168 @@ token_env = "RADMACHINE_TOKEN"
     assert exit_code == 0
     assert payload["server"] is None
     assert payload["raw_export"] == [raw_payload]
-    export_raw.assert_called_once_with(params={"limit": "1"})
+    export_raw.assert_called_once_with(params={"limit": "1", "ordering": "-work_completed"})
+
+
+def test_cli_export_raw_applies_date_range_and_default_ordering(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    old_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/1/",
+        "work_completed": "2026-03-01T10:00:00+10:00",
+    }
+    selected_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/2/",
+        "work_completed": "2026-03-06T10:00:00+10:00",
+    }
+    new_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/3/",
+        "work_completed": "2026-03-20T10:00:00+10:00",
+    }
+
+    with patch(
+        "radlog.cli.RadMachineClient.qa_test_list_instances",
+        return_value=iter(
+            [
+                RmTestListInstance.from_api(new_payload),
+                RmTestListInstance.from_api(selected_payload),
+                RmTestListInstance.from_api(old_payload),
+            ]
+        ),
+    ) as export_raw:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--export-raw",
+                "qa-testlistinstances",
+                "--start",
+                "2026-03-05",
+                "--end",
+                "2026-03-10",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["raw_export"] == [selected_payload]
+    export_raw.assert_called_once_with(params={"ordering": "-work_completed"})
+
+
+def test_cli_export_raw_preserves_explicit_ordering(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.RadMachineClient.service_events", return_value=iter([])) as export_raw:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--export-raw",
+                "service-events",
+                "--param",
+                "ordering=datetime_service",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert json.loads(captured.out)["raw_export"] == []
+    export_raw.assert_called_once_with(params={"ordering": "datetime_service"})
+
+
+def test_cli_export_raw_dates_service_events(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    selected_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/324/",
+        "datetime_service": "2026-04-14T14:46:00+10:00",
+    }
+    old_payload = {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/323/",
+        "datetime_service": "2026-03-01T14:46:00+10:00",
+    }
+
+    with patch(
+        "radlog.cli.RadMachineClient.service_events",
+        return_value=iter([ServiceEvent.from_api(selected_payload), ServiceEvent.from_api(old_payload)]),
+    ) as export_raw:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--export-raw",
+                "service-events",
+                "--start",
+                "2026-04-01",
+                "--end",
+                "2026-04-30",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["raw_export"] == [selected_payload]
+    export_raw.assert_called_once_with(params={"ordering": "-datetime_service"})
+
+
+def test_cli_export_raw_rejects_dates_for_units(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_file),
+            "--export-raw",
+            "units",
+            "--start",
+            "2026-03-01",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "--start/--end are not supported for --export-raw units" in captured.err
 
 
 def test_cli_rejects_collect_with_raw_export(capsys, tmp_path, monkeypatch) -> None:

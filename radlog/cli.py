@@ -28,6 +28,14 @@ RAW_EXPORT_TARGETS = (
     "service-log-return-to-service-qa",
 )
 
+RAW_EXPORT_DEFAULT_ORDERING = {
+    "qa-testlistinstances": "-work_completed",
+    "qa-testinstances": "-work_completed",
+    "qa-unittestcollections": "due_date",
+    "service-events": "-datetime_service",
+    "service-log-return-to-service-qa": "-datetime_assigned",
+}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="radlog")
@@ -83,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         params = _build_query_params(args, config)
+        if args.export_raw:
+            params = _build_raw_export_query_params(args, params)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -132,7 +142,13 @@ def main(argv: list[str] | None = None) -> int:
             server_payload = None
             collected_payload = None
             candidate_payload = []
-            raw_export_payload = _export_raw_payloads(client, args.export_raw, params=params)
+            raw_export_payload = _export_raw_payloads(
+                client,
+                args.export_raw,
+                params=params,
+                start=args.start,
+                end=args.end,
+            )
         else:
             server_payload = (
                 list(client.paginate(args.endpoint, params=params))
@@ -180,7 +196,24 @@ def _build_query_params(args: argparse.Namespace, config) -> dict[str, str]:
     return params
 
 
-def _export_raw_payloads(client: RadMachineClient, target: str, params: dict[str, str]) -> list[dict[str, Any]]:
+def _build_raw_export_query_params(args: argparse.Namespace, params: dict[str, str]) -> dict[str, str]:
+    params = dict(params)
+    if args.export_raw not in RAW_EXPORT_DEFAULT_ORDERING:
+        if args.start or args.end:
+            raise ConfigError(f"--start/--end are not supported for --export-raw {args.export_raw}")
+        return params
+
+    params.setdefault("ordering", RAW_EXPORT_DEFAULT_ORDERING[args.export_raw])
+    return params
+
+
+def _export_raw_payloads(
+    client: RadMachineClient,
+    target: str,
+    params: dict[str, str],
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict[str, Any]]:
     methods = {
         "qa-testlistinstances": client.qa_test_list_instances,
         "qa-testinstances": client.qa_test_instances,
@@ -190,11 +223,40 @@ def _export_raw_payloads(client: RadMachineClient, target: str, params: dict[str
         "service-log-return-to-service-qa": client.service_log_return_to_service_qa,
     }
     records = methods[target](params=params)
-    return [_raw_payload(record) for record in records]
+    return [_raw_payload(record) for record in records if _raw_export_record_in_range(target, record, start, end)]
 
 
 def _raw_payload(record: ApiObject) -> dict[str, Any]:
     return record.raw
+
+
+def _raw_export_record_in_range(target: str, record: ApiObject, start: str | None, end: str | None) -> bool:
+    if not start and not end:
+        return True
+
+    date_value = _raw_export_record_date(target, record)
+    if not date_value:
+        return False
+    date = date_value[:10]
+    if start and date < start:
+        return False
+    if end and date > end:
+        return False
+    return True
+
+
+def _raw_export_record_date(target: str, record: ApiObject) -> str | None:
+    if target == "qa-testlistinstances":
+        return getattr(record, "performed_at", None)
+    if target == "qa-testinstances":
+        return getattr(record, "work_completed", None)
+    if target == "qa-unittestcollections":
+        return getattr(record, "due_date", None)
+    if target == "service-events":
+        return getattr(record, "performed_at", None)
+    if target == "service-log-return-to-service-qa":
+        return getattr(record, "datetime_assigned", None)
+    return None
 
 
 def _redacted_config(config) -> dict:
