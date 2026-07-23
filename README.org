@@ -299,6 +299,42 @@ If =--start= / =--end= are omitted, it defaults to the last seven days. It
 queries recent QA sessions first and stops once it reaches records older than
 the requested start date.
 
+* Examples
+
+The =examples/= directory contains site-specific workflow code that is not part
+of the reusable radlog library.
+
+Current examples:
+
+- =examples/quickcheck_constancy_tcc.py=
+  - dry-run compiler for a TCC QuickCheck Constancy composite test
+  - reads existing monthly dosimetry and QuickCheck sessions
+  - extracts QuickCheck serial, CAX output, and monthly output-deviation values
+  - emits a JSON draft keyed by target QuickCheck Constancy test slugs
+  - does not upload, submit, create, patch, or otherwise mutate RadMachine data
+
+Dry-run with the known example sessions:
+
+#+begin_src sh
+python -m examples.quickcheck_constancy_tcc \
+  --config config.toml \
+  --default-example-sessions
+#+end_src
+
+Dry-run by linac/date:
+
+#+begin_src sh
+python -m examples.quickcheck_constancy_tcc \
+  --config config.toml \
+  --linac LAx \
+  --date 2026-07-07
+#+end_src
+
+The example has =--ui tui= and =--ui gui= entry points for linac/date input.
+Duplicate source-session selection is still deliberately conservative: current
+code defaults to the latest matching session per collection and reports warnings
+in the JSON draft.
+
 * API Model Layer
 
 The Python side keeps a thin mirror of the RadMachine API objects it currently

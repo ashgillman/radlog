@@ -15,7 +15,7 @@
 * TODO General RadMachine interface
 - [ ] Define safe write/create helpers for test entries behind explicit CLI flags
 - [ ] Add examples for pulling third-party data into candidate test entries
-- [ ] Add examples for composing multiple test entries into a derived entry
+- [ ] Add full TUI/GUI duplicate-source selection to the QuickCheck composite example
 
 * TODO Classification
 - [ ] Write classifier for annual QA
