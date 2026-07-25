@@ -135,7 +135,7 @@ Current report mode:
 python -m radlog.cli \
   --report abnormal-qa \
   --last-week \
-  --filter-by-results action,tol,comment
+  --where 'issue in action,tolerance,comment'
 #+end_src
 
 For quick inspection before HTML rendering:
@@ -144,12 +144,57 @@ For quick inspection before HTML rendering:
 python -m radlog.cli \
   --report abnormal-qa \
   --last-week \
-  --filter-by-results action,tol,comment \
+  --where 'issue in action,tolerance,comment' \
   --render plaintext
 #+end_src
 
 Use =--last-day=, =--last-week=, or =--last-month= for common date windows, or
 use explicit =--start YYYY-MM-DD --end YYYY-MM-DD= dates.
+
+Report filters use a small =find=-style expression syntax via repeatable
+=--where= arguments. Repeated =--where= expressions are combined with
+implicit AND.
+
+Supported boolean operators, from highest to lowest precedence:
+
+#+begin_example
+( EXPR )
+! EXPR
+-not EXPR
+EXPR1 -a EXPR2
+EXPR1 -and EXPR2
+EXPR1 EXPR2      # implicit AND
+EXPR1 -o EXPR2
+EXPR1 -or EXPR2
+EXPR1 , EXPR2
+#+end_example
+
+Supported predicate operators:
+
+#+begin_example
+=
+!=
+in
+not-in
+contains
+matches
+exists
+missing
+#+end_example
+
+Examples:
+
+#+begin_src sh
+python -m radlog.cli \
+  --report abnormal-qa \
+  --last-week \
+  --where '( issue = action -o issue = tolerance ) -and equipment matches "LA.*|CT.*"' \
+  --where 'collection contains Monthly' \
+  --render plaintext
+#+end_src
+
+The older =--filter-by-results action,tol,comment= option remains as a
+compatibility alias for filtering the =issue= field.
 
 If live collection is unexpectedly slow, add =--profile=. It prints collection
 counters and timings to stderr without changing the report output:
@@ -158,7 +203,7 @@ counters and timings to stderr without changing the report output:
 python -m radlog.cli \
   --report abnormal-qa \
   --last-week \
-  --filter-by-results action,tol,comment \
+  --where 'issue in action,tolerance,comment' \
   --render plaintext \
   --profile
 #+end_src

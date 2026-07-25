@@ -456,6 +456,63 @@ token_env = "RADMACHINE_TOKEN"
     collect.assert_called_once()
 
 
+def test_cli_filters_abnormal_qa_with_where_expression(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = AbnormalQaReport(
+        start="2026-07-14",
+        end="2026-07-21",
+        issues=[
+            _issue("action", "Failing geometry", equipment_name="LAx"),
+            _issue("tolerance", "Near tolerance", equipment_name="LAx"),
+            _issue("action", "CT action", equipment_name="CTx"),
+            _issue("comment", "Comment only", equipment_name="LAx", comment="Please review trend."),
+        ],
+    )
+
+    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report):
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "abnormal-qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--filter-by-results",
+                "all",
+                "--where",
+                "( issue = action -o issue = tolerance ) -and equipment = LAx",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert [issue["test_label"] for issue in payload["report"]["issues"]] == ["Failing geometry", "Near tolerance"]
+
+
+def test_cli_reports_invalid_where_expression_before_config_load(capsys) -> None:
+    exit_code = main(["--config", "does-not-exist.toml", "--report", "abnormal-qa", "--where", "unknown = value"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "Unknown report filter field" in captured.err
+
+
 def test_cli_defaults_abnormal_qa_report_to_last_week(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
@@ -910,13 +967,20 @@ token_env = "RADMACHINE_TOKEN"
     assert "expected KEY=VALUE" in captured.err
 
 
-def _issue(issue_type: str, test_label: str, comment: str | None = None) -> QaIssue:
+def _issue(
+    issue_type: str,
+    test_label: str,
+    comment: str | None = None,
+    *,
+    equipment_name: str = "LINAC-A - SiteName",
+    equipment_group: str = "LINAC-A",
+) -> QaIssue:
     return QaIssue(
         session_id="101",
         session_url=f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/qa/session/details/101/",
         performed_at="2026-07-20T10:00:00+10:00",
-        equipment_name="LINAC-A - SiteName",
-        equipment_group="LINAC-A",
+        equipment_name=equipment_name,
+        equipment_group=equipment_group,
         collection_name="Generic Monthly QA",
         test_label=test_label,
         issue_type=issue_type,

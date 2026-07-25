@@ -18,6 +18,7 @@ from .config import ConfigError, load_config, resolve_config_path
 from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
 from .report_collect import collect_abnormal_qa_report
+from .report_filters import apply_issue_filters, issue_filter_for_types, parse_where
 from .report_models import AbnormalQaReport, QaIssue, ReportCollectionProfile
 from .rm_models import ApiObject
 
@@ -75,7 +76,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--filter-by-results",
         default="action,tolerance,comment",
-        help="Comma-separated report issue filters: action, tolerance/tol, comment, all.",
+        help="Compatibility alias for --where 'issue in ...'. Values: action, tolerance/tol, comment, all.",
+    )
+    parser.add_argument(
+        "--where",
+        action="append",
+        default=[],
+        help="Find-style report filter expression. Repeat expressions are combined with implicit AND.",
     )
     parser.add_argument("--render", choices=("json", "plaintext"), default="json")
     parser.add_argument(
@@ -106,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         params = _build_query_params(args)
         if args.export_raw:
             params = _build_raw_export_query_params(args, params)
-        report_filters = _parse_report_filters(args.filter_by_results)
+        report_filters = _build_report_filters(args)
         start, end = _effective_dates(args)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -191,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
                 extra_params=params,
                 profile=profile,
             )
-            report.issues = [issue for issue in report.issues if issue.issue_type in report_filters]
+            report.issues = apply_issue_filters(report.issues, report_filters)
             if profile is not None:
                 _write_report_profile(profile)
             if args.render == "plaintext":
@@ -299,6 +306,12 @@ def _relative_date_window(args: argparse.Namespace) -> str | None:
     if len(selected) > 1:
         raise ConfigError("--last-day, --last-week, and --last-month are mutually exclusive")
     return selected[0] if selected else None
+
+
+def _build_report_filters(args: argparse.Namespace):
+    filters = [issue_filter_for_types(_parse_report_filters(args.filter_by_results))]
+    filters.extend(parse_where(expression) for expression in args.where)
+    return filters
 
 
 def _parse_report_filters(value: str) -> set[str]:
