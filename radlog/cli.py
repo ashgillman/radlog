@@ -8,14 +8,13 @@ import sys
 from dataclasses import asdict
 from datetime import date as Date
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 
 import requests
 
 from .api import RadMachineClient
 from .collect import collect_qa_sessions, collect_service_events, serialize_source_records
-from .config import ConfigError, load_config
+from .config import ConfigError, load_config, resolve_config_path
 from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
 from .report_collect import collect_abnormal_qa_report
@@ -45,7 +44,7 @@ REPORT_DEFAULT_DAYS = 7
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="radlog")
-    parser.add_argument("--config", default="config.toml")
+    parser.add_argument("--config")
     parser.add_argument("--start")
     parser.add_argument("--end")
     parser.add_argument("--user")
@@ -105,10 +104,10 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    config_path = Path(args.config)
+    config_path = resolve_config_path(args.config)
     if not config_path.exists():
         print(
-            f"Config file not found: {config_path}. Copy config.toml.example to config.toml.",
+            f"Config file not found: {config_path}. Copy config.toml.example to that path or pass --config.",
             file=sys.stderr,
         )
         return 2
@@ -396,6 +395,7 @@ def _render_abnormal_qa_plaintext(report: AbnormalQaReport) -> str:
 
 def _redacted_config(config) -> dict:
     data = asdict(config)
+    data["radmachine"]["token"] = "<redacted>" if config.radmachine.token else None
     data["radmachine"]["token_env"] = config.radmachine.token_env
     return data
 

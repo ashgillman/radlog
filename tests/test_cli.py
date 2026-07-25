@@ -62,6 +62,54 @@ def test_cli_reports_missing_config(capsys) -> None:
     assert "Config file not found" in captured.err
 
 
+def test_cli_uses_default_user_config_path(capsys, tmp_path, monkeypatch) -> None:
+    config_dir = tmp_path / "config-home" / "radlog"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    with patch("radlog.cli.RadMachineClient.get_json", return_value={"qa": "endpoint"}):
+        exit_code = main([])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["server"] == {"qa": "endpoint"}
+
+
+def test_cli_accepts_direct_config_token(capsys, tmp_path) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+username = "default-user"
+token = "secret-token"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+
+    with patch("radlog.cli.RadMachineClient.get_json", return_value={"qa": "endpoint"}):
+        exit_code = main(["--config", str(config_file)])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["config"]["radmachine"]["token"] == "<redacted>"
+    assert "secret-token" not in captured.out
+
+
 def test_cli_validates_report_filters_before_config_load(capsys) -> None:
     exit_code = main(
         [

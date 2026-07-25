@@ -35,13 +35,15 @@ draft Org text that is close enough to inspect manually.
 
 * Current CLI Use
 
-Assuming =config.toml= is present and =RADMACHINE_TOKEN= is available via
+Assuming RadMachine config is available and =RADMACHINE_TOKEN= is available via
 =direnv=:
 
 #+begin_src sh
 direnv allow
-python -m radlog.cli --config config.toml --format json
+python -m radlog.cli --format json
 #+end_src
+
+Use =--config path/to/config.toml= to override the default config discovery.
 
 Useful current modes:
 
@@ -226,10 +228,19 @@ place.
 
 Expected local setup:
 
-- copy =config.toml.example= to =config.toml=
-- keep =token_env = "RADMACHINE_TOKEN"= in config
-- place the actual token in a local =.env=
-- let =direnv= load it via =.envrc=
+- copy =config.toml.example= to the user config path, normally
+  =~/.config/radlog/config.toml= on macOS/Linux or
+  =%APPDATA%\radlog\config.toml= on Windows
+- put the RadMachine API token in =[radmachine] token = "...";= CLI JSON output
+  redacts this value
+- alternatively keep =token_env = "RADMACHINE_TOKEN"= in config and place the
+  actual token in a shell environment, password manager, or local =.env=
+- if using a local =.env=, let =direnv= load it via =.envrc=
+- optionally set =RADLOG_CONFIG= or pass =--config= to use another config file
+
+The user cache path is normally =~/.cache/radlog= on macOS/Linux or
+=%LOCALAPPDATA%\radlog\cache= on Windows. Future local metadata caches should
+use that location rather than repository-local files.
 
 * Sample Payloads
 
