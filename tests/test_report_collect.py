@@ -52,7 +52,12 @@ class AbnormalReportClient:
                     "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testinstances/4/",
                 },
             ],
-            comments=[{"comment": "Session-level note."}],
+            comments=[
+                {
+                    "comment": "Session-level note.",
+                    "user": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
+                }
+            ],
         )
         yield _session_payload(
             "102",
@@ -75,6 +80,11 @@ class AbnormalReportClient:
                 "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/11/",
                 "name": "LINAC-A - SiteName",
                 "type": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/unittypes/4/",
+            }
+        if endpoint.endswith("/27/"):
+            return {
+                "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
+                "username": "example-user",
             }
         if "testlists-details/301" in endpoint:
             return {
@@ -142,6 +152,7 @@ def test_collect_abnormal_qa_report_extracts_fails_warnings_and_comments() -> No
     assert [issue.issue_type for issue in report.issues] == ["action", "tolerance", "comment"]
     assert report.issues[0].comment == "Investigated and repeated."
     assert report.issues[2].comment == "Session-level note."
+    assert report.issues[2].commenter == "example-user"
     assert report.issues[0].equipment_name == "LINAC-A - SiteName"
     assert report.issues[0].equipment_group == "LINAC-A"
     assert report.issues[0].collection_name == "Generic Monthly QA"
@@ -153,7 +164,7 @@ def test_collect_abnormal_qa_report_extracts_fails_warnings_and_comments() -> No
     assert profile.sessions_seen == 2
     assert profile.sessions_in_range == 1
     assert profile.sessions_with_issues == 1
-    assert profile.metadata_fetches == 3
+    assert profile.metadata_fetches == 4
     assert profile.test_lists_flattened == 2
     fetched = [call[0] for call in client.calls]
     assert "qa/testlists-details/301/" in fetched

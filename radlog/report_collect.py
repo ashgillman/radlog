@@ -115,6 +115,7 @@ def collect_abnormal_qa_report(
                     value=test_instance.get("value"),
                     pass_fail=test_instance.get("pass_fail"),
                     comment=_comment(test_instance),
+                    commenter=_commenter(client, cache, test_instance, profile=profile),
                     raw=test_instance,
                 )
             )
@@ -133,6 +134,7 @@ def collect_abnormal_qa_report(
                     value=None,
                     pass_fail=None,
                     comment=text,
+                    commenter=_commenter(client, cache, comment, profile=profile),
                     raw=comment,
                 )
             )
@@ -380,6 +382,37 @@ def _severity(test_instance: dict) -> str | None:
 def _comment(test_instance: dict) -> str | None:
     text = str(test_instance.get("comment") or "").strip()
     return text or None
+
+
+def _commenter(
+    client: RadMachineClient,
+    cache: dict[str, dict],
+    payload: dict,
+    *,
+    profile: ReportCollectionProfile | None = None,
+) -> str | None:
+    user = payload.get("user") or payload.get("created_by") or payload.get("author")
+    if isinstance(user, dict):
+        return _username_from_payload(user)
+    if not user:
+        return None
+
+    endpoint = str(user)
+    if "/" not in endpoint:
+        return endpoint
+    user_payload = _fetch_json(client, cache, endpoint, profile=profile)
+    return _username_from_payload(user_payload) or extract_id(endpoint)
+
+
+def _username_from_payload(payload: dict) -> str | None:
+    for key in ("username", "name", "email"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    first_name = str(payload.get("first_name") or "").strip()
+    last_name = str(payload.get("last_name") or "").strip()
+    full_name = " ".join(part for part in (first_name, last_name) if part)
+    return full_name or None
 
 
 def _definition_for_order(definitions: dict[int, TestDefinition], order: object) -> TestDefinition | None:

@@ -77,6 +77,17 @@ def test_repeated_where_expressions_are_combined_with_and() -> None:
     assert [issue.test_label for issue in apply_issue_filters(issues, expressions)] == ["CAX output"]
 
 
+def test_parse_where_filters_by_resolved_commenter() -> None:
+    issues = [
+        _issue("comment", "LAx", "Monthly output", "CAX output", comment="Repeated.", commenter="example-user"),
+        _issue("comment", "LAx", "Monthly output", "Flatness", comment="Repeated.", commenter="other-user"),
+    ]
+
+    expression = parse_where("commenter = example-user")
+
+    assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["CAX output"]
+
+
 def test_parse_where_reports_invalid_fields_and_expressions() -> None:
     with pytest.raises(ConfigError, match="Unknown report filter field"):
         parse_where("unknown = value")
@@ -95,6 +106,7 @@ def _issue(
     test: str,
     *,
     comment: str | None = None,
+    commenter: str | None = None,
 ) -> QaIssue:
     return QaIssue(
         session_id="1",
@@ -109,5 +121,6 @@ def _issue(
         value=None,
         pass_fail=issue_type,
         comment=comment,
+        commenter=commenter,
         raw={},
     )

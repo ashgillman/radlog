@@ -20,6 +20,7 @@ class QaIssue:
     value: Any
     pass_fail: str | bool | None
     comment: str | None
+    commenter: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 

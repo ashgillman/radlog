@@ -230,7 +230,7 @@ def _field_values(issue: QaIssue, field: str) -> list[str]:
     elif field == "user":
         values = _raw_values(issue.raw, ("created_by", "modified_by", "user", "username"))
     elif field == "commenter":
-        values = _raw_values(issue.raw, ("created_by", "user", "username", "author"))
+        values = [issue.commenter] + _raw_values(issue.raw, ("created_by", "user", "username", "author"))
     else:
         raise ConfigError(f"Unknown report filter field {field!r}")
     return [str(value) for value in values if value is not None and str(value) != ""]
