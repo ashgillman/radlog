@@ -40,6 +40,11 @@ RAW_EXPORT_DEFAULT_ORDERING = {
 }
 
 REPORT_DEFAULT_DAYS = 7
+RELATIVE_DATE_WINDOWS = {
+    "day": 1,
+    "week": 7,
+    "month": 30,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config")
     parser.add_argument("--start")
     parser.add_argument("--end")
+    parser.add_argument("--last-day", action="store_true", help="Use the last day as the date range.")
+    parser.add_argument("--last-week", action="store_true", help="Use the last seven days as the date range.")
+    parser.add_argument("--last-month", action="store_true", help="Use the last thirty days as the date range.")
     parser.add_argument("--user")
     parser.add_argument("--format", choices=("json",), default="json")
     parser.add_argument(
@@ -255,6 +263,14 @@ def _build_raw_export_query_params(args: argparse.Namespace, params: dict[str, s
 
 
 def _effective_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    relative_window = _relative_date_window(args)
+    if relative_window:
+        if args.start or args.end:
+            raise ConfigError("--last-day/--last-week/--last-month cannot be combined with --start or --end")
+        end_date = Date.today()
+        start = (end_date - timedelta(days=RELATIVE_DATE_WINDOWS[relative_window])).isoformat()
+        return start, end_date.isoformat()
+
     if args.report != "abnormal-qa":
         return args.start, args.end
 
@@ -268,6 +284,21 @@ def _effective_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
         raise ConfigError(f"Invalid --end date {end!r}; expected YYYY-MM-DD") from exc
     start = (end_date - timedelta(days=REPORT_DEFAULT_DAYS)).isoformat()
     return start, end
+
+
+def _relative_date_window(args: argparse.Namespace) -> str | None:
+    selected = [
+        name
+        for name, enabled in (
+            ("day", args.last_day),
+            ("week", args.last_week),
+            ("month", args.last_month),
+        )
+        if enabled
+    ]
+    if len(selected) > 1:
+        raise ConfigError("--last-day, --last-week, and --last-month are mutually exclusive")
+    return selected[0] if selected else None
 
 
 def _parse_report_filters(value: str) -> set[str]:

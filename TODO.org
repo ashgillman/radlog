@@ -38,6 +38,7 @@
 
 * TODO Reports
 - [ ] Add HTML renderer for abnormal QA reports
+- [ ] Design a report filter grammar for user, commenter, severity, equipment, and test-list matching
 - [ ] Add configurable equipment grouping for ancillary equipment
 
 * TODO CLI

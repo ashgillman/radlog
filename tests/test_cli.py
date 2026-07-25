@@ -490,6 +490,91 @@ token_env = "RADMACHINE_TOKEN"
     assert payload["end"] == "2026-07-24"
 
 
+def test_cli_accepts_last_week_date_window(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 24)
+
+    monkeypatch.setattr("radlog.cli.Date", FakeDate)
+    report = AbnormalQaReport(start="2026-07-17", end="2026-07-24", issues=[])
+
+    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
+        exit_code = main(["--config", str(config_file), "--report", "abnormal-qa", "--last-week"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert collect.call_args.kwargs["start"] == "2026-07-17"
+    assert collect.call_args.kwargs["end"] == "2026-07-24"
+    assert payload["start"] == "2026-07-17"
+    assert payload["end"] == "2026-07-24"
+
+
+def test_cli_rejects_relative_date_window_with_explicit_dates(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_file),
+            "--report",
+            "abnormal-qa",
+            "--last-week",
+            "--start",
+            "2026-07-14",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "cannot be combined with --start or --end" in captured.err
+
+
+def test_cli_rejects_multiple_relative_date_windows(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(["--config", str(config_file), "--report", "abnormal-qa", "--last-week", "--last-month"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "mutually exclusive" in captured.err
+
+
 def test_cli_prints_abnormal_qa_profile_to_stderr(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(

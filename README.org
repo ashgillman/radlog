@@ -133,10 +133,8 @@ Current report mode:
 
 #+begin_src sh
 python -m radlog.cli \
-  --config config.toml \
   --report abnormal-qa \
-  --start 2026-07-14 \
-  --end 2026-07-21 \
+  --last-week \
   --filter-by-results action,tol,comment
 #+end_src
 
@@ -144,23 +142,22 @@ For quick inspection before HTML rendering:
 
 #+begin_src sh
 python -m radlog.cli \
-  --config config.toml \
   --report abnormal-qa \
-  --start 2026-07-14 \
-  --end 2026-07-21 \
+  --last-week \
   --filter-by-results action,tol,comment \
   --render plaintext
 #+end_src
+
+Use =--last-day=, =--last-week=, or =--last-month= for common date windows, or
+use explicit =--start YYYY-MM-DD --end YYYY-MM-DD= dates.
 
 If live collection is unexpectedly slow, add =--profile=. It prints collection
 counters and timings to stderr without changing the report output:
 
 #+begin_src sh
 python -m radlog.cli \
-  --config config.toml \
   --report abnormal-qa \
-  --start 2026-07-14 \
-  --end 2026-07-21 \
+  --last-week \
   --filter-by-results action,tol,comment \
   --render plaintext \
   --profile
