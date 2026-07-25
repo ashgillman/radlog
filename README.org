@@ -118,8 +118,57 @@ The CLI currently emits JSON with:
 - =records= for normalized source records
 - =candidates= for grouped entries
 - =raw_export= for unmodified API records from =--export-raw=
+- =report= for structured report output from =--report=
 
 For =linac_mqc= candidates, =rendered_org= now contains the draft Org text.
+
+* Reports
+
+The report path is separate from the Org logbook path. It produces factual
+report records rather than authored logbook candidates.
+
+Current report mode:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --report abnormal-qa \
+  --start 2026-07-14 \
+  --end 2026-07-21 \
+  --filter-by-results action,tol,comment
+#+end_src
+
+For quick inspection before HTML rendering:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --report abnormal-qa \
+  --start 2026-07-14 \
+  --end 2026-07-21 \
+  --filter-by-results action,tol,comment \
+  --render plaintext
+#+end_src
+
+If live collection is unexpectedly slow, add =--profile=. It prints collection
+counters and timings to stderr without changing the report output:
+
+#+begin_src sh
+python -m radlog.cli \
+  --config config.toml \
+  --report abnormal-qa \
+  --start 2026-07-14 \
+  --end 2026-07-21 \
+  --filter-by-results action,tol,comment \
+  --render plaintext \
+  --profile
+#+end_src
+
+The abnormal-QA report currently extracts action-level results, tolerance-level
+results, and comments, grouping each issue by a generic equipment group.
+If =--start= / =--end= are omitted, it defaults to the last seven days. It
+queries recent QA sessions first and stops once it reaches records older than
+the requested start date.
 
 * API Model Layer
 

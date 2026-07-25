@@ -36,6 +36,10 @@
 - [ ] Decide whether =RM_GROUP_KEY= / =RM_SOURCE_IDS= should stay visible in the inserted entry or be hidden elsewhere
 - [ ] Add renderer tests after the initial Org shape settles
 
+* TODO Reports
+- [ ] Add HTML renderer for abnormal QA reports
+- [ ] Add configurable equipment grouping for ancillary equipment
+
 * TODO CLI
 * TODO Emacs integration
 - [ ] Prompt for unit when doing MQA-only imports to reduce slow broad fetches

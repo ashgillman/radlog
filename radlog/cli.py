@@ -6,6 +6,8 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from datetime import date as Date
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,8 @@ from .collect import collect_qa_sessions, collect_service_events, serialize_sour
 from .config import ConfigError, load_config
 from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
+from .report_collect import collect_abnormal_qa_report
+from .report_models import AbnormalQaReport, QaIssue, ReportCollectionProfile
 from .rm_models import ApiObject
 
 
@@ -35,6 +39,8 @@ RAW_EXPORT_DEFAULT_ORDERING = {
     "service-events": "-datetime_service",
     "service-log-return-to-service-qa": "-datetime_assigned",
 }
+
+REPORT_DEFAULT_DAYS = 7
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +64,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--offset", type=int)
     parser.add_argument("--param", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--collect", choices=("qa-sessions", "qa-candidates"))
+    parser.add_argument("--report", choices=("abnormal-qa",))
+    parser.add_argument(
+        "--filter-by-results",
+        default="action,tolerance,comment",
+        help="Comma-separated report issue filters: action, tolerance/tol, comment, all.",
+    )
+    parser.add_argument("--render", choices=("json", "plaintext"), default="json")
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Print report collection timing and request counters to stderr.",
+    )
     parser.add_argument(
         "--export-raw",
         choices=RAW_EXPORT_TARGETS,
@@ -70,8 +88,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.report and (args.collect or args.export_raw):
+        print("--report cannot be combined with --collect or --export-raw", file=sys.stderr)
+        return 2
     if args.export_raw and args.collect:
         print("--export-raw cannot be combined with --collect", file=sys.stderr)
+        return 2
+
+    try:
+        params = _build_query_params(args)
+        if args.export_raw:
+            params = _build_raw_export_query_params(args, params)
+        report_filters = _parse_report_filters(args.filter_by_results)
+        start, end = _effective_dates(args)
+    except ConfigError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
 
     config_path = Path(args.config)
@@ -90,19 +121,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        params = _build_query_params(args, config)
-        if args.export_raw:
-            params = _build_raw_export_query_params(args, params)
-    except ConfigError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    try:
         if args.collect == "qa-sessions":
             records = collect_qa_sessions(
                 client,
-                start=args.start,
-                end=args.end,
+                start=start,
+                end=end,
                 user=args.user or config.radmachine.username,
                 extra_params=params,
             )
@@ -110,17 +133,18 @@ def main(argv: list[str] | None = None) -> int:
             collected_payload = serialize_source_records(records)
             candidate_payload = []
             raw_export_payload = None
+            report_payload = None
         elif args.collect == "qa-candidates":
             records = collect_qa_sessions(
                 client,
-                start=args.start,
-                end=args.end,
+                start=start,
+                end=end,
                 user=args.user or config.radmachine.username,
                 extra_params=params,
             ) + collect_service_events(
                 client,
-                start=args.start,
-                end=args.end,
+                start=start,
+                end=end,
                 extra_params={},
             )
             server_payload = None
@@ -138,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
                 candidate.rendered_org = renderer(candidate)
             candidate_payload = serialize_candidate_entries(candidates)
             raw_export_payload = None
+            report_payload = None
         elif args.export_raw:
             server_payload = None
             collected_payload = None
@@ -146,9 +171,30 @@ def main(argv: list[str] | None = None) -> int:
                 client,
                 args.export_raw,
                 params=params,
-                start=args.start,
-                end=args.end,
+                start=start,
+                end=end,
             )
+            report_payload = None
+        elif args.report == "abnormal-qa":
+            profile = ReportCollectionProfile() if args.profile else None
+            report = collect_abnormal_qa_report(
+                client,
+                start=start or "",
+                end=end or "",
+                extra_params=params,
+                profile=profile,
+            )
+            report.issues = [issue for issue in report.issues if issue.issue_type in report_filters]
+            if profile is not None:
+                _write_report_profile(profile)
+            if args.render == "plaintext":
+                sys.stdout.write(_render_abnormal_qa_plaintext(report))
+                return 0
+            server_payload = None
+            collected_payload = None
+            candidate_payload = []
+            raw_export_payload = None
+            report_payload = _serialize_report(report)
         else:
             server_payload = (
                 list(client.paginate(args.endpoint, params=params))
@@ -158,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             collected_payload = None
             candidate_payload = []
             raw_export_payload = None
+            report_payload = None
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
         print(f"RadMachine API request failed with HTTP {status}", file=sys.stderr)
@@ -167,8 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     payload = {
-        "start": args.start,
-        "end": args.end,
+        "start": start,
+        "end": end,
         "user": args.user or config.radmachine.username,
         "endpoint": args.endpoint or "/",
         "config": _redacted_config(config),
@@ -176,13 +223,14 @@ def main(argv: list[str] | None = None) -> int:
         "records": collected_payload,
         "candidates": candidate_payload,
         "raw_export": raw_export_payload,
+        "report": report_payload,
     }
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
 
 
-def _build_query_params(args: argparse.Namespace, config) -> dict[str, str]:
+def _build_query_params(args: argparse.Namespace) -> dict[str, str]:
     params: dict[str, str] = {}
     if args.limit is not None:
         params["limit"] = str(args.limit)
@@ -205,6 +253,48 @@ def _build_raw_export_query_params(args: argparse.Namespace, params: dict[str, s
 
     params.setdefault("ordering", RAW_EXPORT_DEFAULT_ORDERING[args.export_raw])
     return params
+
+
+def _effective_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    if args.report != "abnormal-qa":
+        return args.start, args.end
+
+    end = args.end or Date.today().isoformat()
+    if args.start:
+        return args.start, end
+
+    try:
+        end_date = Date.fromisoformat(end)
+    except ValueError as exc:
+        raise ConfigError(f"Invalid --end date {end!r}; expected YYYY-MM-DD") from exc
+    start = (end_date - timedelta(days=REPORT_DEFAULT_DAYS)).isoformat()
+    return start, end
+
+
+def _parse_report_filters(value: str) -> set[str]:
+    aliases = {
+        "action": "action",
+        "actions": "action",
+        "fail": "action",
+        "fails": "action",
+        "failure": "action",
+        "tol": "tolerance",
+        "tolerance": "tolerance",
+        "tolerances": "tolerance",
+        "comment": "comment",
+        "comments": "comment",
+    }
+    normalized: set[str] = set()
+    for item in value.split(","):
+        key = item.strip().lower()
+        if not key:
+            continue
+        if key == "all":
+            return {"action", "tolerance", "comment"}
+        if key not in aliases:
+            raise ConfigError(f"Unknown --filter-by-results value {item!r}")
+        normalized.add(aliases[key])
+    return normalized or {"action", "tolerance", "comment"}
 
 
 def _export_raw_payloads(
@@ -257,6 +347,51 @@ def _raw_export_record_date(target: str, record: ApiObject) -> str | None:
     if target == "service-log-return-to-service-qa":
         return getattr(record, "datetime_assigned", None)
     return None
+
+
+def _serialize_report(report: AbnormalQaReport) -> dict[str, Any]:
+    return asdict(report)
+
+
+def _write_report_profile(profile: ReportCollectionProfile) -> None:
+    print("Abnormal QA collection profile:", file=sys.stderr)
+    print(f"  sessions_seen: {profile.sessions_seen}", file=sys.stderr)
+    print(f"  sessions_in_range: {profile.sessions_in_range}", file=sys.stderr)
+    print(f"  sessions_with_issues: {profile.sessions_with_issues}", file=sys.stderr)
+    print(f"  metadata_fetches: {profile.metadata_fetches}", file=sys.stderr)
+    for kind, count in sorted(profile.metadata_fetches_by_kind.items()):
+        print(f"    {kind}: {count}", file=sys.stderr)
+    print(f"  metadata_cache_hits: {profile.metadata_cache_hits}", file=sys.stderr)
+    print(f"  test_lists_flattened: {profile.test_lists_flattened}", file=sys.stderr)
+    print(f"  seconds_paginating: {profile.seconds_paginating:.3f}", file=sys.stderr)
+    print(f"  seconds_metadata: {profile.seconds_metadata:.3f}", file=sys.stderr)
+    print(f"  seconds_flattening: {profile.seconds_flattening:.3f}", file=sys.stderr)
+
+
+def _render_abnormal_qa_plaintext(report: AbnormalQaReport) -> str:
+    lines = [f"Abnormal QA Report: {report.start} to {report.end}"]
+    grouped: dict[str, list[QaIssue]] = {}
+    for issue in report.issues:
+        grouped.setdefault(issue.equipment_group or "Unknown equipment", []).append(issue)
+
+    for equipment in sorted(grouped):
+        lines.extend(["", equipment])
+        lines.append("-" * len(equipment))
+        for issue in grouped[equipment]:
+            parts = [
+                issue.performed_at[:10] if issue.performed_at else "unknown-date",
+                issue.issue_type,
+                issue.collection_name or "Unknown QA",
+                issue.test_label or "Unknown test",
+                f"value={issue.value!r}",
+            ]
+            if issue.session_url:
+                parts.append(issue.session_url)
+            lines.append(" | ".join(parts))
+            if issue.comment:
+                lines.append(f"  Comment: {issue.comment}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _redacted_config(config) -> dict:
