@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from radlog.report_collect import collect_abnormal_qa_report, flatten_test_list
+from radlog.report_collect import collect_qa_report, flatten_test_list
 from radlog.report_models import ReportCollectionProfile
 
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
 
-class AbnormalReportClient:
+class QaReportClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict | None]] = []
 
@@ -23,8 +23,9 @@ class AbnormalReportClient:
                     "order": 0,
                     "value": 100.1,
                     "pass_fail": "ok",
-                    "comment": "",
+                    "comment": "Routine note.",
                     "skipped": False,
+                    "created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
                     "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testinstances/1/",
                 },
                 {
@@ -33,6 +34,7 @@ class AbnormalReportClient:
                     "pass_fail": "fail",
                     "comment": "Investigated and repeated.",
                     "skipped": False,
+                    "created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
                     "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testinstances/2/",
                 },
                 {
@@ -139,24 +141,33 @@ class AbnormalReportClient:
         raise AssertionError(endpoint)
 
 
-def test_collect_abnormal_qa_report_extracts_fails_warnings_and_comments() -> None:
-    client = AbnormalReportClient()
+def test_collect_qa_report_extracts_fails_warnings_and_comments() -> None:
+    client = QaReportClient()
     profile = ReportCollectionProfile()
 
-    report = collect_abnormal_qa_report(client, start="2026-07-14", end="2026-07-21", profile=profile)
+    report = collect_qa_report(client, start="2026-07-14", end="2026-07-21", profile=profile)
 
     assert report.start == "2026-07-14"
     assert report.end == "2026-07-21"
-    assert len(report.issues) == 3
-    assert [issue.test_label for issue in report.issues] == ["Failing geometry", "Near tolerance", "Session comment"]
-    assert [issue.issue_type for issue in report.issues] == ["action", "tolerance", "comment"]
-    assert report.issues[0].comment == "Investigated and repeated."
-    assert report.issues[2].comment == "Session-level note."
-    assert report.issues[2].commenter == "example-user"
-    assert report.issues[0].equipment_name == "LINAC-A - SiteName"
-    assert report.issues[0].equipment_group == "LINAC-A"
-    assert report.issues[0].collection_name == "Generic Monthly QA"
-    assert report.issues[0].session_id == "101"
+    assert len(report.issues) == 4
+    assert [issue.test_label for issue in report.issues] == [
+        "Nominal output",
+        "Failing geometry",
+        "Near tolerance",
+        "Session comment",
+    ]
+    assert [issue.issue_type for issue in report.issues] == ["comment", "action", "tolerance", "comment"]
+    assert report.issues[0].comment == "Routine note."
+    assert report.issues[0].user == "example-user"
+    assert report.issues[0].commenter == "example-user"
+    assert report.issues[1].comment == "Investigated and repeated."
+    assert report.issues[1].user == "example-user"
+    assert report.issues[3].comment == "Session-level note."
+    assert report.issues[3].commenter == "example-user"
+    assert report.issues[1].equipment_name == "LINAC-A - SiteName"
+    assert report.issues[1].equipment_group == "LINAC-A"
+    assert report.issues[1].collection_name == "Generic Monthly QA"
+    assert report.issues[1].session_id == "101"
     assert client.calls[0] == (
         "qa/testlistinstances",
         {"limit": "100", "ordering": "-work_completed"},
@@ -176,14 +187,14 @@ def test_collect_abnormal_qa_report_extracts_fails_warnings_and_comments() -> No
 
 
 def test_flatten_test_list_returns_depth_first_test_labels() -> None:
-    client = AbnormalReportClient()
+    client = QaReportClient()
 
     labels = [test.label for test in flatten_test_list(client, f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlists/301/")]
 
     assert labels == ["Nominal output", "Failing geometry", "Near tolerance", "Skipped item"]
 
 
-def test_collect_abnormal_qa_report_skips_metadata_fetches_for_normal_sessions() -> None:
+def test_collect_qa_report_skips_metadata_fetches_for_normal_sessions() -> None:
     class NormalSessionClient:
         def paginate(self, endpoint: str, params: dict[str, str] | None = None):
             yield _session_payload(
@@ -205,13 +216,33 @@ def test_collect_abnormal_qa_report_skips_metadata_fetches_for_normal_sessions()
         def get_json(self, endpoint: str, params: dict[str, str] | None = None):
             raise AssertionError(f"Unexpected metadata fetch for normal session: {endpoint}")
 
-    report = collect_abnormal_qa_report(NormalSessionClient(), start="2026-07-14", end="2026-07-21")
+    report = collect_qa_report(NormalSessionClient(), start="2026-07-14", end="2026-07-21")
 
     assert report.issues == []
 
 
-def test_collect_abnormal_qa_report_reuses_flattened_test_lists() -> None:
-    class RepeatedTestListClient(AbnormalReportClient):
+def test_collect_qa_report_can_include_normal_results() -> None:
+    client = QaReportClient()
+
+    report = collect_qa_report(
+        client,
+        start="2026-07-14",
+        end="2026-07-21",
+        include_normal_results=True,
+    )
+
+    assert [issue.issue_type for issue in report.issues] == ["comment", "action", "tolerance", "skipped", "comment"]
+    assert [issue.test_label for issue in report.issues] == [
+        "Nominal output",
+        "Failing geometry",
+        "Near tolerance",
+        "Skipped item",
+        "Session comment",
+    ]
+
+
+def test_collect_qa_report_reuses_flattened_test_lists() -> None:
+    class RepeatedTestListClient(QaReportClient):
         def paginate(self, endpoint: str, params: dict[str, str] | None = None):
             self.calls.append((endpoint, params))
             for remote_id in ("101", "102"):
@@ -234,7 +265,7 @@ def test_collect_abnormal_qa_report_reuses_flattened_test_lists() -> None:
     client = RepeatedTestListClient()
     profile = ReportCollectionProfile()
 
-    report = collect_abnormal_qa_report(client, start="2026-07-14", end="2026-07-21", profile=profile)
+    report = collect_qa_report(client, start="2026-07-14", end="2026-07-21", profile=profile)
 
     assert len(report.issues) == 2
     assert profile.test_lists_flattened == 2

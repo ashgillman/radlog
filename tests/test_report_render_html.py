@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from radlog.report_models import AbnormalQaReport, QaIssue
-from radlog.report_renderers.html import render_abnormal_qa_html
+from radlog.report_models import QaReport, QaIssue
+from radlog.report_renderers.html import render_qa_html
 
 
 def test_render_qa_html_groups_issues_and_links_sessions() -> None:
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-18",
         end="2026-07-25",
         issues=[
@@ -14,7 +14,7 @@ def test_render_qa_html_groups_issues_and_links_sessions() -> None:
         ],
     )
 
-    html = render_abnormal_qa_html(report)
+    html = render_qa_html(report)
 
     assert "<!doctype html>" in html
     assert "QA Report" in html
@@ -27,7 +27,7 @@ def test_render_qa_html_groups_issues_and_links_sessions() -> None:
 
 
 def test_render_qa_html_escapes_report_content() -> None:
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-18",
         end="2026-07-25",
         issues=[
@@ -41,7 +41,7 @@ def test_render_qa_html_escapes_report_content() -> None:
         ],
     )
 
-    html = render_abnormal_qa_html(report)
+    html = render_qa_html(report)
 
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from radlog.cli import main
 from radlog.models import CandidateEntry
-from radlog.report_models import AbnormalQaReport, QaIssue
+from radlog.report_models import QaReport, QaIssue
 from radlog.rm_models import ServiceEvent
 from radlog.rm_models import TestListInstance as RmTestListInstance
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
@@ -417,7 +417,7 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-14",
         end="2026-07-21",
         issues=[
@@ -427,7 +427,7 @@ token_env = "RADMACHINE_TOKEN"
         ],
     )
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
         exit_code = main(
             [
                 "--config",
@@ -453,7 +453,7 @@ token_env = "RADMACHINE_TOKEN"
     assert payload["server"] is None
     assert payload["records"] is None
     assert payload["candidates"] == []
-    collect.assert_called_once()
+    assert collect.call_args.kwargs["include_normal_results"] is False
 
 
 def test_cli_filters_qa_with_where_expression(capsys, tmp_path, monkeypatch) -> None:
@@ -467,7 +467,7 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-14",
         end="2026-07-21",
         issues=[
@@ -478,7 +478,7 @@ token_env = "RADMACHINE_TOKEN"
         ],
     )
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report):
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
         exit_code = main(
             [
                 "--config",
@@ -501,6 +501,81 @@ token_env = "RADMACHINE_TOKEN"
 
     assert exit_code == 0
     assert [issue["test_label"] for issue in payload["report"]["issues"]] == ["Failing geometry", "Near tolerance"]
+    # "all" opts into collecting normal/skipped rows before --where is applied.
+    # The mocked report is already collected, so this checks the CLI request shape.
+    assert collect.call_args.kwargs["include_normal_results"] is True
+
+
+def test_cli_pushes_report_user_to_api_params(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = QaReport(start="2026-07-14", end="2026-07-21", issues=[])
+
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--user",
+                "example-user",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert collect.call_args.kwargs["extra_params"] == {"created_by__username": "example-user"}
+
+
+def test_cli_pushes_simple_where_user_to_api_params(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = QaReport(start="2026-07-14", end="2026-07-21", issues=[])
+
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--where",
+                "user = example-user",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert collect.call_args.kwargs["extra_params"] == {"created_by__username": "example-user"}
 
 
 def test_cli_reports_invalid_where_expression_before_config_load(capsys) -> None:
@@ -531,9 +606,9 @@ token_env = "RADMACHINE_TOKEN"
             return cls(2026, 7, 24)
 
     monkeypatch.setattr("radlog.cli.Date", FakeDate)
-    report = AbnormalQaReport(start="2026-07-17", end="2026-07-24", issues=[])
+    report = QaReport(start="2026-07-17", end="2026-07-24", issues=[])
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
         exit_code = main(["--config", str(config_file), "--report", "qa"])
 
     captured = capsys.readouterr()
@@ -565,9 +640,9 @@ token_env = "RADMACHINE_TOKEN"
             return cls(2026, 7, 24)
 
     monkeypatch.setattr("radlog.cli.Date", FakeDate)
-    report = AbnormalQaReport(start="2026-07-17", end="2026-07-24", issues=[])
+    report = QaReport(start="2026-07-17", end="2026-07-24", issues=[])
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
         exit_code = main(["--config", str(config_file), "--report", "qa", "--last-week"])
 
     captured = capsys.readouterr()
@@ -657,9 +732,9 @@ token_env = "RADMACHINE_TOKEN"
         profile.seconds_paginating = 1.2
         profile.seconds_metadata = 3.4
         profile.seconds_flattening = 2.5
-        return AbnormalQaReport(start="2026-07-14", end="2026-07-21", issues=[])
+        return QaReport(start="2026-07-14", end="2026-07-21", issues=[])
 
-    with patch("radlog.cli.collect_abnormal_qa_report", side_effect=collect_report):
+    with patch("radlog.cli.collect_qa_report", side_effect=collect_report):
         exit_code = main(
             [
                 "--config",
@@ -696,7 +771,7 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-14",
         end="2026-07-21",
         issues=[
@@ -705,7 +780,7 @@ token_env = "RADMACHINE_TOKEN"
         ],
     )
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report):
+    with patch("radlog.cli.collect_qa_report", return_value=report):
         exit_code = main(
             [
                 "--config",
@@ -745,13 +820,13 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-14",
         end="2026-07-21",
         issues=[_issue("action", "Failing geometry", comment="Investigated and repeated.")],
     )
 
-    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report):
+    with patch("radlog.cli.collect_qa_report", return_value=report):
         exit_code = main(
             [
                 "--config",
@@ -787,14 +862,14 @@ token_env = "RADMACHINE_TOKEN"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
-    report = AbnormalQaReport(
+    report = QaReport(
         start="2026-07-14",
         end="2026-07-21",
         issues=[_issue("action", "Failing geometry")],
     )
 
     with (
-        patch("radlog.cli.collect_abnormal_qa_report", return_value=report),
+        patch("radlog.cli.collect_qa_report", return_value=report),
         patch("radlog.cli._serve_html") as serve_html,
     ):
         exit_code = main(

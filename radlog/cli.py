@@ -22,10 +22,10 @@ from .collect import collect_qa_sessions, collect_service_events, serialize_sour
 from .config import ConfigError, load_config, resolve_config_path
 from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
-from .report_collect import collect_abnormal_qa_report
-from .report_filters import apply_issue_filters, issue_filter_for_types, parse_where
-from .report_models import AbnormalQaReport, QaIssue, ReportCollectionProfile
-from .report_renderers.html import render_abnormal_qa_html
+from .report_collect import collect_qa_report
+from .report_filters import apply_issue_filters, exact_user_filter_value, issue_filter_for_types, parse_where
+from .report_models import QaReport, QaIssue, ReportCollectionProfile
+from .report_renderers.html import render_qa_html
 from .rm_models import ApiObject
 
 
@@ -119,7 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         params = _build_query_params(args)
         if args.export_raw:
             params = _build_raw_export_query_params(args, params)
-        report_filters = _build_report_filters(args)
+        report_issue_types = _parse_report_filters(args.filter_by_results)
+        where_filters = [parse_where(expression) for expression in args.where]
+        report_filters = _build_report_filters(report_issue_types, where_filters)
+        report_params = _build_report_query_params(params, args, where_filters)
         start, end = _effective_dates(args)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -197,24 +200,25 @@ def main(argv: list[str] | None = None) -> int:
             report_payload = None
         elif args.report == "qa":
             profile = ReportCollectionProfile() if args.profile else None
-            report = collect_abnormal_qa_report(
+            report = collect_qa_report(
                 client,
                 start=start or "",
                 end=end or "",
-                extra_params=params,
+                extra_params=report_params,
                 profile=profile,
+                include_normal_results=bool(report_issue_types & {"normal", "skipped"}),
             )
             report.issues = apply_issue_filters(report.issues, report_filters)
             if profile is not None:
                 _write_report_profile(profile)
             if args.render == "plaintext":
-                sys.stdout.write(_render_abnormal_qa_plaintext(report))
+                sys.stdout.write(_render_qa_plaintext(report))
                 return 0
             if args.render == "html":
-                sys.stdout.write(render_abnormal_qa_html(report))
+                sys.stdout.write(render_qa_html(report))
                 return 0
             if args.render == "html-serve":
-                _serve_html(render_abnormal_qa_html(report))
+                _serve_html(render_qa_html(report))
                 return 0
             server_payload = None
             collected_payload = None
@@ -320,10 +324,29 @@ def _relative_date_window(args: argparse.Namespace) -> str | None:
     return selected[0] if selected else None
 
 
-def _build_report_filters(args: argparse.Namespace):
-    filters = [issue_filter_for_types(_parse_report_filters(args.filter_by_results))]
-    filters.extend(parse_where(expression) for expression in args.where)
+def _build_report_filters(report_issue_types: set[str], where_filters):
+    filters = [issue_filter_for_types(report_issue_types)]
+    filters.extend(where_filters)
     return filters
+
+
+def _build_report_query_params(
+    params: dict[str, str],
+    args: argparse.Namespace,
+    where_filters,
+) -> dict[str, str]:
+    report_params = dict(params)
+    user = args.user or next((value for expression in where_filters if (value := exact_user_filter_value(expression))), None)
+    if user:
+        _set_report_query_param(report_params, "created_by__username", user)
+    return report_params
+
+
+def _set_report_query_param(params: dict[str, str], key: str, value: str) -> None:
+    existing = params.get(key)
+    if existing is not None and existing != value:
+        raise ConfigError(f"--param {key}={existing!r} conflicts with report filter {key}={value!r}")
+    params[key] = value
 
 
 def _parse_report_filters(value: str) -> set[str]:
@@ -338,6 +361,11 @@ def _parse_report_filters(value: str) -> set[str]:
         "tolerances": "tolerance",
         "comment": "comment",
         "comments": "comment",
+        "normal": "normal",
+        "normals": "normal",
+        "ok": "normal",
+        "skipped": "skipped",
+        "skip": "skipped",
     }
     normalized: set[str] = set()
     for item in value.split(","):
@@ -345,7 +373,7 @@ def _parse_report_filters(value: str) -> set[str]:
         if not key:
             continue
         if key == "all":
-            return {"action", "tolerance", "comment"}
+            return {"action", "tolerance", "comment", "normal", "skipped"}
         if key not in aliases:
             raise ConfigError(f"Unknown --filter-by-results value {item!r}")
         normalized.add(aliases[key])
@@ -404,7 +432,7 @@ def _raw_export_record_date(target: str, record: ApiObject) -> str | None:
     return None
 
 
-def _serialize_report(report: AbnormalQaReport) -> dict[str, Any]:
+def _serialize_report(report: QaReport) -> dict[str, Any]:
     return asdict(report)
 
 
@@ -423,7 +451,7 @@ def _write_report_profile(profile: ReportCollectionProfile) -> None:
     print(f"  seconds_flattening: {profile.seconds_flattening:.3f}", file=sys.stderr)
 
 
-def _render_abnormal_qa_plaintext(report: AbnormalQaReport) -> str:
+def _render_qa_plaintext(report: QaReport) -> str:
     lines = [f"QA Report: {report.start} to {report.end}"]
     grouped: dict[str, list[QaIssue]] = {}
     for issue in report.issues:

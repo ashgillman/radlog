@@ -209,6 +209,22 @@ python -m radlog.cli \
 
 The older =--filter-by-results action,tol,comment= option remains as a
 compatibility alias for filtering the =issue= field.
+=--filter-by-results all= includes normal and skipped QA rows too; otherwise
+the report collects action-level rows, tolerance-level rows, and rows with
+comments.
+
+For reports submitted by a specific RadMachine user, prefer =--user=. The QA
+report pushes that filter down to RadMachine as =created_by__username= before
+doing local =--where= filtering:
+
+#+begin_src sh
+python -m radlog.cli \
+  --report qa \
+  --last-week \
+  --user gillmanas \
+  --filter-by-results all \
+  --render plaintext
+#+end_src
 
 If live collection is unexpectedly slow, add =--profile=. It prints collection
 counters and timings to stderr without changing the report output:

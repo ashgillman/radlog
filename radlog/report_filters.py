@@ -107,6 +107,19 @@ def apply_issue_filters(issues: list[QaIssue], expressions: list[IssuePredicate]
     return [issue for issue in issues if all(expression.matches(issue) for expression in expressions)]
 
 
+def exact_user_filter_value(expression: IssuePredicate) -> str | None:
+    """Return an exact user constraint that is safe to push down to RadMachine.
+
+    This deliberately ignores OR/NOT/contains/matches cases. It is only safe to
+    push down a predicate that the final client-side filter also requires.
+    """
+    if isinstance(expression, Predicate) and expression.field == "user" and expression.operator == "=":
+        return expression.value
+    if isinstance(expression, And):
+        return exact_user_filter_value(expression.left) or exact_user_filter_value(expression.right)
+    return None
+
+
 def issue_filter_for_types(issue_types: set[str]) -> IssuePredicate:
     return Predicate("issue", "in", ",".join(sorted(issue_types)))
 
@@ -228,9 +241,9 @@ def _field_values(issue: QaIssue, field: str) -> list[str]:
     elif field == "session":
         values = [issue.session_id, issue.session_url]
     elif field == "user":
-        values = _raw_values(issue.raw, ("created_by", "modified_by", "user", "username"))
+        values = [issue.user] + _raw_values(issue.raw, ("created_by", "modified_by", "user", "username"))
     elif field == "commenter":
-        values = [issue.commenter] + _raw_values(issue.raw, ("created_by", "user", "username", "author"))
+        values = [issue.commenter]
     else:
         raise ConfigError(f"Unknown report filter field {field!r}")
     return [str(value) for value in values if value is not None and str(value) != ""]

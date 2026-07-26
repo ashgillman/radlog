@@ -20,12 +20,13 @@ class QaIssue:
     value: Any
     pass_fail: str | bool | None
     comment: str | None
+    user: str | None = None
     commenter: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
-class AbnormalQaReport:
+class QaReport:
     start: str
     end: str
     issues: list[QaIssue] = field(default_factory=list)

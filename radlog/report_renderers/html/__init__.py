@@ -5,10 +5,10 @@ from __future__ import annotations
 from html import escape
 from importlib.resources import files
 
-from radlog.report_models import AbnormalQaReport, QaIssue
+from radlog.report_models import QaReport, QaIssue
 
 
-def render_abnormal_qa_html(report: AbnormalQaReport) -> str:
+def render_qa_html(report: QaReport) -> str:
     grouped: dict[str, list[QaIssue]] = {}
     for issue in report.issues:
         grouped.setdefault(issue.equipment_group or "Unknown equipment", []).append(issue)

@@ -88,6 +88,33 @@ def test_parse_where_filters_by_resolved_commenter() -> None:
     assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["CAX output"]
 
 
+def test_commenter_does_not_match_creator_when_no_commenter_is_resolved() -> None:
+    issues = [
+        _issue(
+            "tolerance",
+            "LAx",
+            "Monthly output",
+            "Winston Lutz",
+            raw={"created_by": {"username": "example-user"}},
+        )
+    ]
+
+    expression = parse_where("commenter = example-user")
+
+    assert apply_issue_filters(issues, [expression]) == []
+
+
+def test_parse_where_filters_by_resolved_user() -> None:
+    issues = [
+        _issue("normal", "LAx", "Monthly output", "Output", user="example-user"),
+        _issue("normal", "LAx", "Monthly output", "Flatness", user="other-user"),
+    ]
+
+    expression = parse_where("user = example-user")
+
+    assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["Output"]
+
+
 def test_parse_where_reports_invalid_fields_and_expressions() -> None:
     with pytest.raises(ConfigError, match="Unknown report filter field"):
         parse_where("unknown = value")
@@ -107,6 +134,8 @@ def _issue(
     *,
     comment: str | None = None,
     commenter: str | None = None,
+    user: str | None = None,
+    raw: dict | None = None,
 ) -> QaIssue:
     return QaIssue(
         session_id="1",
@@ -121,6 +150,7 @@ def _issue(
         value=None,
         pass_fail=issue_type,
         comment=comment,
+        user=user,
         commenter=commenter,
-        raw={},
+        raw=raw or {},
     )

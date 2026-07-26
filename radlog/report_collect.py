@@ -7,7 +7,7 @@ from time import perf_counter
 import requests
 
 from .api import RadMachineClient
-from .report_models import AbnormalQaReport, QaIssue, ReportCollectionProfile, TestDefinition
+from .report_models import QaReport, QaIssue, ReportCollectionProfile, TestDefinition
 from .rm_models import TestListInstance, Unit, UnitTestCollection, extract_id, split_unit_name
 
 
@@ -23,20 +23,21 @@ ABNORMAL_PASS_FAIL_VALUES = {
 }
 
 
-def collect_abnormal_qa_report(
+def collect_qa_report(
     client: RadMachineClient,
     *,
     start: str,
     end: str,
     extra_params: dict[str, str] | None = None,
     profile: ReportCollectionProfile | None = None,
-) -> AbnormalQaReport:
+    include_normal_results: bool = False,
+) -> QaReport:
     params = dict(extra_params or {})
     params.setdefault("limit", "100")
     params.setdefault("ordering", "-work_completed")
     descending_by_completion = params.get("ordering") == "-work_completed"
 
-    report = AbnormalQaReport(start=start, end=end)
+    report = QaReport(start=start, end=end)
     cache: dict[str, dict] = {}
     test_definition_cache: dict[str, dict[int, TestDefinition]] = {}
     searched_test_orders: dict[str, set[int]] = {}
@@ -65,7 +66,7 @@ def collect_abnormal_qa_report(
         issue_instances = [
             (test_instance, issue_type)
             for test_instance in session.test_instances
-            if (issue_type := _issue_type(test_instance)) is not None
+            if (issue_type := _issue_type(test_instance, include_normal_results=include_normal_results)) is not None
         ]
         session_comments = [(comment, text) for comment in session.comments if (text := _comment(comment))]
         if not issue_instances and not session_comments:
@@ -115,7 +116,8 @@ def collect_abnormal_qa_report(
                     value=test_instance.get("value"),
                     pass_fail=test_instance.get("pass_fail"),
                     comment=_comment(test_instance),
-                    commenter=_commenter(client, cache, test_instance, profile=profile),
+                    user=_user(client, cache, test_instance, profile=profile),
+                    commenter=_commenter(client, cache, test_instance, profile=profile) if _comment(test_instance) else None,
                     raw=test_instance,
                 )
             )
@@ -134,6 +136,7 @@ def collect_abnormal_qa_report(
                     value=None,
                     pass_fail=None,
                     comment=text,
+                    user=_user(client, cache, comment, profile=profile),
                     commenter=_commenter(client, cache, comment, profile=profile),
                     raw=comment,
                 )
@@ -357,9 +360,7 @@ def _metadata_kind(endpoint: str) -> str:
     return parts[-1] if parts else "unknown"
 
 
-def _issue_type(test_instance: dict) -> str | None:
-    if test_instance.get("skipped"):
-        return None
+def _issue_type(test_instance: dict, *, include_normal_results: bool = False) -> str | None:
     pass_fail = test_instance.get("pass_fail")
     if isinstance(pass_fail, str):
         normalized = pass_fail.strip().lower()
@@ -367,6 +368,10 @@ def _issue_type(test_instance: dict) -> str | None:
             return ABNORMAL_PASS_FAIL_VALUES[normalized]
     if _comment(test_instance):
         return "comment"
+    if test_instance.get("skipped"):
+        return "skipped" if include_normal_results else None
+    if include_normal_results:
+        return "normal"
     return None
 
 
@@ -392,6 +397,27 @@ def _commenter(
     profile: ReportCollectionProfile | None = None,
 ) -> str | None:
     user = payload.get("user") or payload.get("created_by") or payload.get("author")
+    return _resolve_user(client, cache, user, profile=profile)
+
+
+def _user(
+    client: RadMachineClient,
+    cache: dict[str, dict],
+    payload: dict,
+    *,
+    profile: ReportCollectionProfile | None = None,
+) -> str | None:
+    user = payload.get("created_by") or payload.get("user") or payload.get("author")
+    return _resolve_user(client, cache, user, profile=profile)
+
+
+def _resolve_user(
+    client: RadMachineClient,
+    cache: dict[str, dict],
+    user: object,
+    *,
+    profile: ReportCollectionProfile | None = None,
+) -> str | None:
     if isinstance(user, dict):
         return _username_from_payload(user)
     if not user:
