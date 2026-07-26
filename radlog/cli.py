@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
 from dataclasses import asdict
 from datetime import date as Date
 from datetime import timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
+import webbrowser
 
 import requests
 
@@ -20,6 +25,7 @@ from .group import group_source_records, serialize_candidate_entries
 from .report_collect import collect_abnormal_qa_report
 from .report_filters import apply_issue_filters, issue_filter_for_types, parse_where
 from .report_models import AbnormalQaReport, QaIssue, ReportCollectionProfile
+from .report_renderers.html import render_abnormal_qa_html
 from .rm_models import ApiObject
 
 
@@ -72,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--offset", type=int)
     parser.add_argument("--param", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--collect", choices=("qa-sessions", "qa-candidates"))
-    parser.add_argument("--report", choices=("abnormal-qa",))
+    parser.add_argument("--report", choices=("qa",))
     parser.add_argument(
         "--filter-by-results",
         default="action,tolerance,comment",
@@ -84,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Find-style report filter expression. Repeat expressions are combined with implicit AND.",
     )
-    parser.add_argument("--render", choices=("json", "plaintext"), default="json")
+    parser.add_argument("--render", choices=("json", "plaintext", "html", "html-serve"), default="json")
     parser.add_argument(
         "--profile",
         action="store_true",
@@ -189,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                 end=end,
             )
             report_payload = None
-        elif args.report == "abnormal-qa":
+        elif args.report == "qa":
             profile = ReportCollectionProfile() if args.profile else None
             report = collect_abnormal_qa_report(
                 client,
@@ -203,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
                 _write_report_profile(profile)
             if args.render == "plaintext":
                 sys.stdout.write(_render_abnormal_qa_plaintext(report))
+                return 0
+            if args.render == "html":
+                sys.stdout.write(render_abnormal_qa_html(report))
+                return 0
+            if args.render == "html-serve":
+                _serve_html(render_abnormal_qa_html(report))
                 return 0
             server_payload = None
             collected_payload = None
@@ -278,7 +290,7 @@ def _effective_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
         start = (end_date - timedelta(days=RELATIVE_DATE_WINDOWS[relative_window])).isoformat()
         return start, end_date.isoformat()
 
-    if args.report != "abnormal-qa":
+    if args.report != "qa":
         return args.start, args.end
 
     end = args.end or Date.today().isoformat()
@@ -397,7 +409,7 @@ def _serialize_report(report: AbnormalQaReport) -> dict[str, Any]:
 
 
 def _write_report_profile(profile: ReportCollectionProfile) -> None:
-    print("Abnormal QA collection profile:", file=sys.stderr)
+    print("QA report collection profile:", file=sys.stderr)
     print(f"  sessions_seen: {profile.sessions_seen}", file=sys.stderr)
     print(f"  sessions_in_range: {profile.sessions_in_range}", file=sys.stderr)
     print(f"  sessions_with_issues: {profile.sessions_with_issues}", file=sys.stderr)
@@ -412,7 +424,7 @@ def _write_report_profile(profile: ReportCollectionProfile) -> None:
 
 
 def _render_abnormal_qa_plaintext(report: AbnormalQaReport) -> str:
-    lines = [f"Abnormal QA Report: {report.start} to {report.end}"]
+    lines = [f"QA Report: {report.start} to {report.end}"]
     grouped: dict[str, list[QaIssue]] = {}
     for issue in report.issues:
         grouped.setdefault(issue.equipment_group or "Unknown equipment", []).append(issue)
@@ -435,6 +447,22 @@ def _render_abnormal_qa_plaintext(report: AbnormalQaReport) -> str:
                 lines.append(f"  Comment: {issue.comment}")
     lines.append("")
     return "\n".join(lines)
+
+
+def _serve_html(html: str, *, host: str = "127.0.0.1", port: int = 0) -> None:
+    with TemporaryDirectory(prefix="radlog-report-") as directory:
+        path = Path(directory) / "index.html"
+        path.write_text(html, encoding="utf-8")
+        handler = partial(SimpleHTTPRequestHandler, directory=directory)
+        with ThreadingHTTPServer((host, port), handler) as server:
+            url = f"http://{host}:{server.server_address[1]}/"
+            print(f"Serving report at {url}", file=sys.stderr)
+            print("Press Ctrl-C to stop.", file=sys.stderr)
+            webbrowser.open(url)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                print("Stopped report server.", file=sys.stderr)
 
 
 def _redacted_config(config) -> dict:

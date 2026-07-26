@@ -133,7 +133,7 @@ Current report mode:
 
 #+begin_src sh
 python -m radlog.cli \
-  --report abnormal-qa \
+  --report qa \
   --last-week \
   --where 'issue in action,tolerance,comment'
 #+end_src
@@ -142,11 +142,25 @@ For quick inspection before HTML rendering:
 
 #+begin_src sh
 python -m radlog.cli \
-  --report abnormal-qa \
+  --report qa \
   --last-week \
   --where 'issue in action,tolerance,comment' \
   --render plaintext
 #+end_src
+
+For browser inspection without building a separate app:
+
+#+begin_src sh
+python -m radlog.cli \
+  --report qa \
+  --last-week \
+  --where 'issue in action,tolerance,comment' \
+  --render html-serve
+#+end_src
+
+=--render html= writes the same HTML to stdout. =--render html-serve= starts a
+temporary localhost server, opens the report in the default browser, and runs
+until interrupted with =Ctrl-C=.
 
 Use =--last-day=, =--last-week=, or =--last-month= for common date windows, or
 use explicit =--start YYYY-MM-DD --end YYYY-MM-DD= dates.
@@ -186,7 +200,7 @@ Examples:
 
 #+begin_src sh
 python -m radlog.cli \
-  --report abnormal-qa \
+  --report qa \
   --last-week \
   --where '( issue = action -o issue = tolerance ) -and equipment matches "LA.*|CT.*"' \
   --where 'collection contains Monthly' \
@@ -201,15 +215,15 @@ counters and timings to stderr without changing the report output:
 
 #+begin_src sh
 python -m radlog.cli \
-  --report abnormal-qa \
+  --report qa \
   --last-week \
   --where 'issue in action,tolerance,comment' \
   --render plaintext \
   --profile
 #+end_src
 
-The abnormal-QA report currently extracts action-level results, tolerance-level
-results, and comments, grouping each issue by a generic equipment group.
+The QA report currently extracts action-level results, tolerance-level results,
+and comments, grouping each issue by a generic equipment group.
 If =--start= / =--end= are omitted, it defaults to the last seven days. It
 queries recent QA sessions first and stops once it reaches records older than
 the requested start date.

@@ -116,7 +116,7 @@ def test_cli_validates_report_filters_before_config_load(capsys) -> None:
             "--config",
             "does-not-exist.toml",
             "--report",
-            "abnormal-qa",
+            "qa",
             "--filter-by-results",
             "bogus",
         ]
@@ -406,7 +406,7 @@ token_env = "RADMACHINE_TOKEN"
     assert "--export-raw cannot be combined with --collect" in captured.err
 
 
-def test_cli_reports_abnormal_qa_as_json(capsys, tmp_path, monkeypatch) -> None:
+def test_cli_reports_qa_as_json(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -433,7 +433,7 @@ token_env = "RADMACHINE_TOKEN"
                 "--config",
                 str(config_file),
                 "--report",
-                "abnormal-qa",
+                "qa",
                 "--start",
                 "2026-07-14",
                 "--end",
@@ -456,7 +456,7 @@ token_env = "RADMACHINE_TOKEN"
     collect.assert_called_once()
 
 
-def test_cli_filters_abnormal_qa_with_where_expression(capsys, tmp_path, monkeypatch) -> None:
+def test_cli_filters_qa_with_where_expression(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -484,7 +484,7 @@ token_env = "RADMACHINE_TOKEN"
                 "--config",
                 str(config_file),
                 "--report",
-                "abnormal-qa",
+                "qa",
                 "--start",
                 "2026-07-14",
                 "--end",
@@ -504,7 +504,7 @@ token_env = "RADMACHINE_TOKEN"
 
 
 def test_cli_reports_invalid_where_expression_before_config_load(capsys) -> None:
-    exit_code = main(["--config", "does-not-exist.toml", "--report", "abnormal-qa", "--where", "unknown = value"])
+    exit_code = main(["--config", "does-not-exist.toml", "--report", "qa", "--where", "unknown = value"])
 
     captured = capsys.readouterr()
 
@@ -513,7 +513,7 @@ def test_cli_reports_invalid_where_expression_before_config_load(capsys) -> None
     assert "Unknown report filter field" in captured.err
 
 
-def test_cli_defaults_abnormal_qa_report_to_last_week(capsys, tmp_path, monkeypatch) -> None:
+def test_cli_defaults_qa_report_to_last_week(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -534,7 +534,7 @@ token_env = "RADMACHINE_TOKEN"
     report = AbnormalQaReport(start="2026-07-17", end="2026-07-24", issues=[])
 
     with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
-        exit_code = main(["--config", str(config_file), "--report", "abnormal-qa"])
+        exit_code = main(["--config", str(config_file), "--report", "qa"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -568,7 +568,7 @@ token_env = "RADMACHINE_TOKEN"
     report = AbnormalQaReport(start="2026-07-17", end="2026-07-24", issues=[])
 
     with patch("radlog.cli.collect_abnormal_qa_report", return_value=report) as collect:
-        exit_code = main(["--config", str(config_file), "--report", "abnormal-qa", "--last-week"])
+        exit_code = main(["--config", str(config_file), "--report", "qa", "--last-week"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -597,7 +597,7 @@ token_env = "RADMACHINE_TOKEN"
             "--config",
             str(config_file),
             "--report",
-            "abnormal-qa",
+            "qa",
             "--last-week",
             "--start",
             "2026-07-14",
@@ -623,7 +623,7 @@ token_env = "RADMACHINE_TOKEN"
     )
     monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
 
-    exit_code = main(["--config", str(config_file), "--report", "abnormal-qa", "--last-week", "--last-month"])
+    exit_code = main(["--config", str(config_file), "--report", "qa", "--last-week", "--last-month"])
 
     captured = capsys.readouterr()
 
@@ -632,7 +632,7 @@ token_env = "RADMACHINE_TOKEN"
     assert "mutually exclusive" in captured.err
 
 
-def test_cli_prints_abnormal_qa_profile_to_stderr(capsys, tmp_path, monkeypatch) -> None:
+def test_cli_prints_qa_profile_to_stderr(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -665,7 +665,7 @@ token_env = "RADMACHINE_TOKEN"
                 "--config",
                 str(config_file),
                 "--report",
-                "abnormal-qa",
+                "qa",
                 "--start",
                 "2026-07-14",
                 "--end",
@@ -677,7 +677,7 @@ token_env = "RADMACHINE_TOKEN"
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Abnormal QA collection profile:" in captured.err
+    assert "QA report collection profile:" in captured.err
     assert "sessions_seen: 12" in captured.err
     assert "metadata_fetches: 15" in captured.err
     assert "qa/testlists-details: 6" in captured.err
@@ -685,7 +685,7 @@ token_env = "RADMACHINE_TOKEN"
     assert "seconds_metadata: 3.400" in captured.err
 
 
-def test_cli_reports_abnormal_qa_as_plaintext(capsys, tmp_path, monkeypatch) -> None:
+def test_cli_reports_qa_as_plaintext(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         """
@@ -711,7 +711,7 @@ token_env = "RADMACHINE_TOKEN"
                 "--config",
                 str(config_file),
                 "--report",
-                "abnormal-qa",
+                "qa",
                 "--start",
                 "2026-07-14",
                 "--end",
@@ -726,12 +726,98 @@ token_env = "RADMACHINE_TOKEN"
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Abnormal QA Report: 2026-07-14 to 2026-07-21" in captured.out
+    assert "QA Report: 2026-07-14 to 2026-07-21" in captured.out
     assert "LINAC-A" in captured.out
     assert "Failing geometry" in captured.out
     assert "Investigated and repeated." in captured.out
     assert "Comment only" in captured.out
     assert captured.err == ""
+
+
+def test_cli_reports_qa_as_html(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = AbnormalQaReport(
+        start="2026-07-14",
+        end="2026-07-21",
+        issues=[_issue("action", "Failing geometry", comment="Investigated and repeated.")],
+    )
+
+    with patch("radlog.cli.collect_abnormal_qa_report", return_value=report):
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--render",
+                "html",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out.startswith("<!doctype html>")
+    assert "QA Report" in captured.out
+    assert "Failing geometry" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_serves_qa_html(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = AbnormalQaReport(
+        start="2026-07-14",
+        end="2026-07-21",
+        issues=[_issue("action", "Failing geometry")],
+    )
+
+    with (
+        patch("radlog.cli.collect_abnormal_qa_report", return_value=report),
+        patch("radlog.cli._serve_html") as serve_html,
+    ):
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--render",
+                "html-serve",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out == ""
+    serve_html.assert_called_once()
+    assert "Failing geometry" in serve_html.call_args.args[0]
 
 
 def test_cli_rejects_report_with_collect(capsys, tmp_path, monkeypatch) -> None:
@@ -753,7 +839,7 @@ token_env = "RADMACHINE_TOKEN"
             "--collect",
             "qa-sessions",
             "--report",
-            "abnormal-qa",
+            "qa",
         ]
     )
 

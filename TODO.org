@@ -37,7 +37,6 @@
 - [ ] Add renderer tests after the initial Org shape settles
 
 * TODO Reports
-- [ ] Add HTML renderer for abnormal QA reports
 - [ ] Add configurable equipment grouping for ancillary equipment
 
 * TODO CLI
