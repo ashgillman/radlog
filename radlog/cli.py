@@ -484,7 +484,7 @@ def _parse_report_filters(value: str | None) -> set[str]:
         "skip": "skipped",
     }
     normalized: set[str] = set()
-    for item in (value or "action,tolerance,comment").split(","):
+    for item in (value or "all").split(","):
         key = item.strip().lower()
         if not key:
             continue

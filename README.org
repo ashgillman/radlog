@@ -207,11 +207,10 @@ python -m radlog.cli \
   --render plaintext
 #+end_src
 
-The older =--filter-by-results action,tol,comment= option remains as a
-compatibility alias for filtering the =issue= field.
-=--filter-by-results all= includes normal and skipped QA rows too; otherwise
-the report collects action-level rows, tolerance-level rows, and rows with
-comments.
+By default, =--report qa= collects all QA rows, including normal and skipped
+results. Use =--filter-by-results= to narrow that to specific result classes,
+for example =--filter-by-results action,tol,comment= for abnormal/comment-only
+reports.
 
 For reports submitted by a specific RadMachine user, prefer =--user=. The QA
 report pushes that filter down to RadMachine as =created_by__username= before
@@ -279,8 +278,7 @@ python -m radlog.cli \
   --profile
 #+end_src
 
-The QA report currently extracts action-level results, tolerance-level results,
-and comments, grouping each issue by a generic equipment group.
+The QA report groups rows by a generic equipment group.
 If =--start= / =--end= are omitted, it defaults to the last seven days. It
 queries recent QA sessions first and stops once it reaches records older than
 the requested start date.

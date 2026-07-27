@@ -456,6 +456,49 @@ token_env = "RADMACHINE_TOKEN"
     assert collect.call_args.kwargs["include_normal_results"] is False
 
 
+def test_cli_defaults_qa_report_to_all_rows(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = QaReport(
+        start="2026-07-14",
+        end="2026-07-21",
+        issues=[
+            _issue("normal", "Normal output"),
+            _issue("skipped", "Skipped setup"),
+            _issue("action", "Failing geometry"),
+        ],
+    )
+
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert [issue["issue_type"] for issue in payload["report"]["issues"]] == ["normal", "skipped", "action"]
+    assert collect.call_args.kwargs["include_normal_results"] is True
+
+
 def test_cli_filters_qa_with_where_expression(capsys, tmp_path, monkeypatch) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(
