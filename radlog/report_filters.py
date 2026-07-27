@@ -125,7 +125,7 @@ def issue_filter_for_types(issue_types: set[str]) -> IssuePredicate:
 
 
 def _tokenize(expression: str) -> list[str]:
-    lexer = shlex.shlex(expression, posix=True, punctuation_chars="()")
+    lexer = shlex.shlex(expression, posix=True, punctuation_chars="(),")
     lexer.whitespace_split = True
     lexer.commenters = ""
     return list(lexer)
@@ -144,6 +144,11 @@ class _Parser:
         if self.at_end:
             return None
         return self.tokens[self.position]
+
+    def peek_next(self) -> str | None:
+        if self.position + 1 >= len(self.tokens):
+            return None
+        return self.tokens[self.position + 1]
 
     def advance(self) -> str:
         if self.at_end:
@@ -203,7 +208,7 @@ class _Parser:
             raise ConfigError(f"Unknown report filter operator {operator!r}")
 
         value_parts: list[str] = []
-        while not self.at_end and not self._is_expression_boundary(self.peek()):
+        while not self.at_end and not self._is_expression_boundary(self.peek(), operator=operator):
             value_parts.append(self.advance())
         if not value_parts:
             raise ConfigError(f"Expected report filter value after {field} {operator}")
@@ -213,9 +218,14 @@ class _Parser:
         token = self.peek()
         return token in {"!", "-not", "("} or token in VALID_FIELDS
 
-    @staticmethod
-    def _is_expression_boundary(token: str | None) -> bool:
-        return token is None or token == ")" or token == "," or token in AND_OPERATORS or token in OR_OPERATORS or token in {"!", "-not"}
+    def _is_expression_boundary(self, token: str | None, *, operator: str) -> bool:
+        if token is None or token == ")" or token in AND_OPERATORS or token in OR_OPERATORS or token in {"!", "-not"}:
+            return True
+        if token != ",":
+            return False
+        if operator in {"in", "not-in"} and self.peek_next() not in VALID_FIELDS:
+            return False
+        return True
 
 
 def _field_values(issue: QaIssue, field: str) -> list[str]:

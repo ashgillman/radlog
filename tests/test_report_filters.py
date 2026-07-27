@@ -48,6 +48,10 @@ def test_parse_where_supports_in_contains_matches_exists_and_missing() -> None:
 
     assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["CAX output"]
 
+    expression = parse_where("issue in action,tolerance")
+
+    assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["CAX output", "HU constancy"]
+
     expression = parse_where("comment missing")
 
     assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == ["HU constancy"]
@@ -63,6 +67,23 @@ def test_parse_where_treats_comma_as_low_precedence_or() -> None:
     expression = parse_where("equipment = LAx , equipment = ABC x")
 
     assert [issue.equipment_name for issue in apply_issue_filters(issues, [expression])] == ["LAx", "ABC x"]
+
+
+def test_parse_where_treats_comma_without_spaces_as_or() -> None:
+    issues = [
+        _issue("comment", "LAx", "Monthly output", "Comment A", commenter="brodmanna"),
+        _issue("comment", "LAx", "Monthly output", "Comment B", commenter="manika"),
+        _issue("comment", "LAx", "Monthly output", "Comment C", commenter="marshlind"),
+        _issue("comment", "LAx", "Monthly output", "Comment D", commenter="other-user"),
+    ]
+
+    expression = parse_where("commenter = brodmanna, commenter = manika, commenter = marshlind")
+
+    assert [issue.test_label for issue in apply_issue_filters(issues, [expression])] == [
+        "Comment A",
+        "Comment B",
+        "Comment C",
+    ]
 
 
 def test_repeated_where_expressions_are_combined_with_and() -> None:

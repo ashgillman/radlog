@@ -226,6 +226,47 @@ python -m radlog.cli \
   --render plaintext
 #+end_src
 
+You can also define named report presets in =config.toml=:
+
+#+begin_src toml
+[reports.my-weekly-comments]
+type = "qa"
+last = "week"
+filter_by_results = "comment"
+where = ["commenter = gillmanas, commenter = colleague-user"]
+render = "html-serve"
+#+end_src
+
+Comma is a low-precedence OR, matching =find= style. This is equivalent to:
+
+#+begin_src toml
+where = ["commenter = gillmanas -or commenter = colleague-user"]
+#+end_src
+
+Do not set =user= in this preset unless you also want to restrict collection to
+QA submitted by one RadMachine user. =user= and =commenter= are separate
+filters.
+
+Then run:
+
+#+begin_src sh
+python -m radlog.cli --report my-weekly-comments
+#+end_src
+
+Preset time window and renderer are defaults, so they can be overridden:
+
+#+begin_src sh
+python -m radlog.cli \
+  --report my-weekly-comments \
+  --last-month \
+  --render plaintext
+#+end_src
+
+Preset filters are intentionally not merged with CLI filters. If a preset
+defines =user=, =filter_by_results=, =where=, or =params=, do not combine it
+with =--user=, =--filter-by-results=, =--where=, =--param=, =--limit=, or
+=--offset=. Define another preset instead.
+
 If live collection is unexpectedly slow, add =--profile=. It prints collection
 counters and timings to stderr without changing the report output:
 

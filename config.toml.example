@@ -23,3 +23,23 @@ rules = "group_tcc_similar:RULES"
 [render]
 # Callable in MODULE:ATTRIBUTE form.
 logbook_org_renderer = "render_ag_org:render_candidate"
+
+# Named report presets can be run with:
+#   python -m radlog.cli --report my-weekly-comments
+#
+# Time window and renderer are defaults; override them at the CLI with flags
+# like --last-month or --render plaintext. Filters are intentionally not
+# mergeable at the CLI when a preset defines them; create another preset for a
+# different filter set.
+[reports.my-weekly-comments]
+type = "qa"
+last = "week"
+filter_by_results = "comment"
+# Equivalent forms:
+#   "commenter = <your_username> -or commenter = <colleague_username>"
+#   "commenter = <your_username>, commenter = <colleague_username>"
+#
+# Do not set `user` here unless you also want to restrict collection to QA
+# submitted by one RadMachine user.
+where = ["commenter = <your_username>, commenter = <colleague_username>"]
+render = "html-serve"

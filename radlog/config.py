@@ -49,12 +49,26 @@ class ExtensionsConfig:
 
 
 @dataclass(slots=True)
+class ReportPresetConfig:
+    type: str = "qa"
+    start: str | None = None
+    end: str | None = None
+    last: str | None = None
+    user: str | None = None
+    filter_by_results: str | None = None
+    where: list[str] = field(default_factory=list)
+    render: str | None = None
+    params: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class Config:
     radmachine: RadMachineConfig
     logbook: LogbookConfig
     grouping: GroupingConfig
     render: RenderConfig
     extensions: ExtensionsConfig
+    reports: dict[str, ReportPresetConfig] = field(default_factory=dict)
 
 
 class ConfigError(ValueError):
@@ -119,6 +133,7 @@ def load_config(path: str | Path) -> Config:
         grouping=GroupingConfig(**raw.get("grouping", {})),
         render=RenderConfig(**raw.get("render", {})),
         extensions=ExtensionsConfig(**raw.get("extensions", {})),
+        reports=_reports_config(raw),
     )
 
 
@@ -140,6 +155,27 @@ def _radmachine_config(raw: dict[str, Any]) -> dict[str, Any]:
 
     flat_keys = {"base_url", "customer_id", "username", "token", "token_env"}
     return {key: raw[key] for key in flat_keys if key in raw}
+
+
+def _reports_config(raw: dict[str, Any]) -> dict[str, ReportPresetConfig]:
+    reports = raw.get("reports", {})
+    if not isinstance(reports, dict):
+        raise ConfigError("reports config must be a TOML table")
+
+    presets: dict[str, ReportPresetConfig] = {}
+    for name, value in reports.items():
+        if not isinstance(value, dict):
+            raise ConfigError(f"reports.{name} config must be a TOML table")
+        preset = dict(value)
+        if "where" in preset and isinstance(preset["where"], str):
+            preset["where"] = [preset["where"]]
+        if "params" in preset:
+            params = preset["params"]
+            if not isinstance(params, dict):
+                raise ConfigError(f"reports.{name}.params must be a TOML table")
+            preset["params"] = {str(key): str(param_value) for key, param_value in params.items()}
+        presets[str(name)] = ReportPresetConfig(**preset)
+    return presets
 
 
 def get_token(config: Config) -> str:

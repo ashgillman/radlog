@@ -578,6 +578,140 @@ token_env = "RADMACHINE_TOKEN"
     assert collect.call_args.kwargs["extra_params"] == {"created_by__username": "example-user"}
 
 
+def test_cli_runs_named_report_preset(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+
+[reports.my-weekly-comments]
+type = "qa"
+last = "week"
+user = "example-user"
+filter_by_results = "comment"
+where = ["commenter = example-user"]
+render = "plaintext"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 24)
+
+    monkeypatch.setattr("radlog.cli.Date", FakeDate)
+    report = QaReport(
+        start="2026-07-17",
+        end="2026-07-24",
+        issues=[
+            _issue("comment", "Comment by preset user", comment="Review note.", commenter="example-user"),
+            _issue("comment", "Comment by other user", comment="Other note.", commenter="other-user"),
+            _issue("action", "Action result", comment="Action note.", commenter="example-user"),
+        ],
+    )
+
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
+        exit_code = main(["--config", str(config_file), "--report", "my-weekly-comments"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "QA Report: 2026-07-17 to 2026-07-24" in captured.out
+    assert "Comment by preset user" in captured.out
+    assert "Comment by other user" not in captured.out
+    assert "Action result" not in captured.out
+    assert collect.call_args.kwargs["start"] == "2026-07-17"
+    assert collect.call_args.kwargs["end"] == "2026-07-24"
+    assert collect.call_args.kwargs["extra_params"] == {"created_by__username": "example-user"}
+
+
+def test_cli_allows_named_report_date_and_render_overrides(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+
+[reports.weekly-qa]
+type = "qa"
+last = "week"
+render = "plaintext"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 24)
+
+    monkeypatch.setattr("radlog.cli.Date", FakeDate)
+    report = QaReport(start="2026-07-23", end="2026-07-24", issues=[])
+
+    with patch("radlog.cli.collect_qa_report", return_value=report) as collect:
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "weekly-qa",
+                "--last-day",
+                "--render",
+                "json",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["report"]["start"] == "2026-07-23"
+    assert payload["report"]["end"] == "2026-07-24"
+    assert collect.call_args.kwargs["start"] == "2026-07-23"
+    assert collect.call_args.kwargs["end"] == "2026-07-24"
+
+
+def test_cli_rejects_filter_overrides_for_filtered_report_preset(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+
+[reports.my-weekly-comments]
+type = "qa"
+last = "week"
+where = ["commenter = example-user"]
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_file),
+            "--report",
+            "my-weekly-comments",
+            "--where",
+            "issue = action",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "defines filters" in captured.err
+
+
 def test_cli_reports_invalid_where_expression_before_config_load(capsys) -> None:
     exit_code = main(["--config", "does-not-exist.toml", "--report", "qa", "--where", "unknown = value"])
 
@@ -1135,6 +1269,7 @@ def _issue(
     *,
     equipment_name: str = "LINAC-A - SiteName",
     equipment_group: str = "LINAC-A",
+    commenter: str | None = None,
 ) -> QaIssue:
     return QaIssue(
         session_id="101",
@@ -1149,4 +1284,5 @@ def _issue(
         value=4.2,
         pass_fail=issue_type,
         comment=comment,
+        commenter=commenter,
     )

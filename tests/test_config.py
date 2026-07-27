@@ -46,6 +46,16 @@ logbook_org_renderer = "custom_renderer:render"
 
 [extensions]
 paths = ["~/radlog-extensions"]
+
+[reports.weekly-comments]
+type = "qa"
+last = "week"
+user = "tester"
+filter_by_results = "comment"
+where = ["commenter = tester"]
+render = "html-serve"
+[reports.weekly-comments.params]
+ordering = "-work_completed"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
     )
 
@@ -60,6 +70,13 @@ paths = ["~/radlog-extensions"]
     assert config.render.include_flagged_items is False
     assert config.render.logbook_org_renderer == "custom_renderer:render"
     assert config.extensions.paths == ["~/radlog-extensions"]
+    assert config.reports["weekly-comments"].type == "qa"
+    assert config.reports["weekly-comments"].last == "week"
+    assert config.reports["weekly-comments"].user == "tester"
+    assert config.reports["weekly-comments"].filter_by_results == "comment"
+    assert config.reports["weekly-comments"].where == ["commenter = tester"]
+    assert config.reports["weekly-comments"].render == "html-serve"
+    assert config.reports["weekly-comments"].params == {"ordering": "-work_completed"}
 
 
 def test_load_config_accepts_direct_token(tmp_path: Path) -> None:

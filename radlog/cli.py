@@ -7,7 +7,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date as Date
 from datetime import timedelta
 from pathlib import Path
@@ -19,7 +19,7 @@ import requests
 
 from .api import RadMachineClient
 from .collect import collect_qa_sessions, collect_service_events, serialize_source_records
-from .config import ConfigError, load_config, resolve_config_path
+from .config import Config, ConfigError, ReportPresetConfig, load_config, resolve_config_path
 from .extensions import load_callable, load_object
 from .group import group_source_records, serialize_candidate_entries
 from .report_collect import collect_qa_report
@@ -52,6 +52,19 @@ RELATIVE_DATE_WINDOWS = {
     "week": 7,
     "month": 30,
 }
+REPORT_TYPES = {"qa"}
+
+
+@dataclass(slots=True)
+class ReportOptions:
+    report_type: str
+    start: str | None
+    end: str | None
+    render: str
+    user: str | None
+    issue_types: set[str]
+    filters: list
+    params: dict[str, str]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,10 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--offset", type=int)
     parser.add_argument("--param", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--collect", choices=("qa-sessions", "qa-candidates"))
-    parser.add_argument("--report", choices=("qa",))
+    parser.add_argument("--report")
     parser.add_argument(
         "--filter-by-results",
-        default="action,tolerance,comment",
+        default=None,
         help="Compatibility alias for --where 'issue in ...'. Values: action, tolerance/tol, comment, all.",
     )
     parser.add_argument(
@@ -90,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Find-style report filter expression. Repeat expressions are combined with implicit AND.",
     )
-    parser.add_argument("--render", choices=("json", "plaintext", "html", "html-serve"), default="json")
+    parser.add_argument("--render", choices=("json", "plaintext", "html", "html-serve"), default=None)
     parser.add_argument(
         "--profile",
         action="store_true",
@@ -116,13 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
+        cli_where_filters = [parse_where(expression) for expression in args.where]
+        cli_report_issue_types = _parse_report_filters(args.filter_by_results) if args.filter_by_results else None
         params = _build_query_params(args)
         if args.export_raw:
             params = _build_raw_export_query_params(args, params)
-        report_issue_types = _parse_report_filters(args.filter_by_results)
-        where_filters = [parse_where(expression) for expression in args.where]
-        report_filters = _build_report_filters(report_issue_types, where_filters)
-        report_params = _build_report_query_params(params, args, where_filters)
         start, end = _effective_dates(args)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -138,6 +149,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(config_path)
+        report_options = _resolve_report_options(
+            args,
+            config,
+            params=params,
+            default_start=start,
+            default_end=end,
+            cli_where_filters=cli_where_filters,
+            cli_report_issue_types=cli_report_issue_types,
+        )
         client = RadMachineClient(config)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -198,26 +218,26 @@ def main(argv: list[str] | None = None) -> int:
                 end=end,
             )
             report_payload = None
-        elif args.report == "qa":
+        elif report_options and report_options.report_type == "qa":
             profile = ReportCollectionProfile() if args.profile else None
             report = collect_qa_report(
                 client,
-                start=start or "",
-                end=end or "",
-                extra_params=report_params,
+                start=report_options.start or "",
+                end=report_options.end or "",
+                extra_params=report_options.params,
                 profile=profile,
-                include_normal_results=bool(report_issue_types & {"normal", "skipped"}),
+                include_normal_results=bool(report_options.issue_types & {"normal", "skipped"}),
             )
-            report.issues = apply_issue_filters(report.issues, report_filters)
+            report.issues = apply_issue_filters(report.issues, report_options.filters)
             if profile is not None:
                 _write_report_profile(profile)
-            if args.render == "plaintext":
+            if report_options.render == "plaintext":
                 sys.stdout.write(_render_qa_plaintext(report))
                 return 0
-            if args.render == "html":
+            if report_options.render == "html":
                 sys.stdout.write(render_qa_html(report))
                 return 0
-            if args.render == "html-serve":
+            if report_options.render == "html-serve":
                 _serve_html(render_qa_html(report))
                 return 0
             server_payload = None
@@ -244,9 +264,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     payload = {
-        "start": start,
-        "end": end,
-        "user": args.user or config.radmachine.username,
+        "start": report_options.start if report_options else start,
+        "end": report_options.end if report_options else end,
+        "user": report_options.user if report_options else args.user or config.radmachine.username,
         "endpoint": args.endpoint or "/",
         "config": _redacted_config(config),
         "server": server_payload,
@@ -286,20 +306,29 @@ def _build_raw_export_query_params(args: argparse.Namespace, params: dict[str, s
 
 
 def _effective_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
-    relative_window = _relative_date_window(args)
+    report_type = args.report if args.report in REPORT_TYPES else None
+    return _effective_report_dates(report_type, args.start, args.end, _relative_date_window(args))
+
+
+def _effective_report_dates(
+    report_type: str | None,
+    start: str | None,
+    end: str | None,
+    relative_window: str | None,
+) -> tuple[str | None, str | None]:
     if relative_window:
-        if args.start or args.end:
+        if start or end:
             raise ConfigError("--last-day/--last-week/--last-month cannot be combined with --start or --end")
         end_date = Date.today()
         start = (end_date - timedelta(days=RELATIVE_DATE_WINDOWS[relative_window])).isoformat()
         return start, end_date.isoformat()
 
-    if args.report != "qa":
-        return args.start, args.end
+    if report_type != "qa":
+        return start, end
 
-    end = args.end or Date.today().isoformat()
-    if args.start:
-        return args.start, end
+    end = end or Date.today().isoformat()
+    if start:
+        return start, end
 
     try:
         end_date = Date.fromisoformat(end)
@@ -324,6 +353,93 @@ def _relative_date_window(args: argparse.Namespace) -> str | None:
     return selected[0] if selected else None
 
 
+def _resolve_report_options(
+    args: argparse.Namespace,
+    config: Config,
+    *,
+    params: dict[str, str],
+    default_start: str | None,
+    default_end: str | None,
+    cli_where_filters,
+    cli_report_issue_types: set[str] | None,
+) -> ReportOptions | None:
+    if not args.report:
+        return None
+
+    preset = _report_preset(args.report, config)
+    report_type = preset.type if preset else args.report
+    if report_type not in REPORT_TYPES:
+        raise ConfigError(f"Unknown report type {report_type!r} for --report {args.report!r}")
+
+    _reject_ambiguous_filter_overrides(args, preset)
+    render = args.render or (preset.render if preset else None) or "json"
+    if render not in {"json", "plaintext", "html", "html-serve"}:
+        raise ConfigError(f"Unknown render value {render!r} in report preset {args.report!r}")
+
+    start, end = _report_dates_from_args_or_preset(args, preset, report_type, default_start, default_end)
+    issue_types = cli_report_issue_types or _parse_report_filters(preset.filter_by_results if preset else None)
+    where_filters = cli_where_filters if not preset or not preset.where else [parse_where(expression) for expression in preset.where]
+    filters = _build_report_filters(issue_types, where_filters)
+
+    report_params = dict(params)
+    if preset:
+        report_params.update(preset.params)
+    user = args.user or (preset.user if preset else None)
+    report_params = _build_report_query_params(report_params, user, where_filters)
+
+    return ReportOptions(
+        report_type=report_type,
+        start=start,
+        end=end,
+        render=render,
+        user=user or config.radmachine.username,
+        issue_types=issue_types,
+        filters=filters,
+        params=report_params,
+    )
+
+
+def _report_preset(report_name: str, config: Config) -> ReportPresetConfig | None:
+    if report_name in REPORT_TYPES:
+        return None
+    preset = config.reports.get(report_name)
+    if preset is None:
+        raise ConfigError(f"Unknown report {report_name!r}; use a built-in report or define [reports.{report_name}]")
+    return preset
+
+
+def _reject_ambiguous_filter_overrides(args: argparse.Namespace, preset: ReportPresetConfig | None) -> None:
+    if not preset:
+        return
+    preset_filters = bool(preset.user or preset.filter_by_results or preset.where or preset.params)
+    cli_filters = bool(args.user or args.filter_by_results or args.where or args.param or args.limit is not None or args.offset is not None)
+    if preset_filters and cli_filters:
+        raise ConfigError(
+            f"--report {args.report!r} defines filters; do not combine it with --user, --where, "
+            "--filter-by-results, --param, --limit, or --offset"
+        )
+
+
+def _report_dates_from_args_or_preset(
+    args: argparse.Namespace,
+    preset: ReportPresetConfig | None,
+    report_type: str,
+    default_start: str | None,
+    default_end: str | None,
+) -> tuple[str | None, str | None]:
+    if _cli_date_override_specified(args) or not preset:
+        return default_start, default_end
+
+    relative_window = preset.last
+    if relative_window and relative_window not in RELATIVE_DATE_WINDOWS:
+        raise ConfigError(f"Unknown last value {relative_window!r} in report preset {args.report!r}")
+    return _effective_report_dates(report_type, preset.start, preset.end, relative_window)
+
+
+def _cli_date_override_specified(args: argparse.Namespace) -> bool:
+    return bool(args.start or args.end or args.last_day or args.last_week or args.last_month)
+
+
 def _build_report_filters(report_issue_types: set[str], where_filters):
     filters = [issue_filter_for_types(report_issue_types)]
     filters.extend(where_filters)
@@ -332,11 +448,11 @@ def _build_report_filters(report_issue_types: set[str], where_filters):
 
 def _build_report_query_params(
     params: dict[str, str],
-    args: argparse.Namespace,
+    user: str | None,
     where_filters,
 ) -> dict[str, str]:
     report_params = dict(params)
-    user = args.user or next((value for expression in where_filters if (value := exact_user_filter_value(expression))), None)
+    user = user or next((value for expression in where_filters if (value := exact_user_filter_value(expression))), None)
     if user:
         _set_report_query_param(report_params, "created_by__username", user)
     return report_params
@@ -349,7 +465,7 @@ def _set_report_query_param(params: dict[str, str], key: str, value: str) -> Non
     params[key] = value
 
 
-def _parse_report_filters(value: str) -> set[str]:
+def _parse_report_filters(value: str | None) -> set[str]:
     aliases = {
         "action": "action",
         "actions": "action",
@@ -368,7 +484,7 @@ def _parse_report_filters(value: str) -> set[str]:
         "skip": "skipped",
     }
     normalized: set[str] = set()
-    for item in value.split(","):
+    for item in (value or "action,tolerance,comment").split(","):
         key = item.strip().lower()
         if not key:
             continue
