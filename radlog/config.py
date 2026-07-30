@@ -51,6 +51,7 @@ class ExtensionsConfig:
 @dataclass(slots=True)
 class ReportPresetConfig:
     type: str = "qa"
+    title: str | None = None
     start: str | None = None
     end: str | None = None
     last: str | None = None
@@ -58,6 +59,7 @@ class ReportPresetConfig:
     filter_by_results: str | None = None
     where: list[str] = field(default_factory=list)
     render: str | None = None
+    group_by: str | None = None
     params: dict[str, str] = field(default_factory=dict)
 
 

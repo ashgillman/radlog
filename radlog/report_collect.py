@@ -116,6 +116,7 @@ def collect_qa_report(
                     value=test_instance.get("value"),
                     pass_fail=test_instance.get("pass_fail"),
                     comment=_comment(test_instance),
+                    reference=_reference(test_instance),
                     user=_user(client, cache, test_instance, profile=profile),
                     commenter=_commenter(client, cache, test_instance, profile=profile) if _comment(test_instance) else None,
                     raw=test_instance,
@@ -136,6 +137,7 @@ def collect_qa_report(
                     value=None,
                     pass_fail=None,
                     comment=text,
+                    reference=None,
                     user=_user(client, cache, comment, profile=profile),
                     commenter=_commenter(client, cache, comment, profile=profile),
                     raw=comment,
@@ -387,6 +389,20 @@ def _severity(test_instance: dict) -> str | None:
 def _comment(test_instance: dict) -> str | None:
     text = str(test_instance.get("comment") or "").strip()
     return text or None
+
+
+def _reference(test_instance: dict) -> object | None:
+    for key in ("reference_value", "reference_display", "referenceDisplay", "referenceValue"):
+        value = test_instance.get(key)
+        if value not in (None, "") and not _looks_like_url(value):
+            return value
+    return None
+
+
+def _looks_like_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    return value.startswith(("http://", "https://", "/"))
 
 
 def _commenter(

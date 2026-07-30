@@ -49,11 +49,13 @@ paths = ["~/radlog-extensions"]
 
 [reports.weekly-comments]
 type = "qa"
+title = "Weekly QA Comments"
 last = "week"
 user = "tester"
 filter_by_results = "comment"
 where = ["commenter = tester"]
 render = "html-serve"
+group_by = "date"
 [reports.weekly-comments.params]
 ordering = "-work_completed"
 """.strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
@@ -71,11 +73,13 @@ ordering = "-work_completed"
     assert config.render.logbook_org_renderer == "custom_renderer:render"
     assert config.extensions.paths == ["~/radlog-extensions"]
     assert config.reports["weekly-comments"].type == "qa"
+    assert config.reports["weekly-comments"].title == "Weekly QA Comments"
     assert config.reports["weekly-comments"].last == "week"
     assert config.reports["weekly-comments"].user == "tester"
     assert config.reports["weekly-comments"].filter_by_results == "comment"
     assert config.reports["weekly-comments"].where == ["commenter = tester"]
     assert config.reports["weekly-comments"].render == "html-serve"
+    assert config.reports["weekly-comments"].group_by == "date"
     assert config.reports["weekly-comments"].params == {"ordering": "-work_completed"}
 
 

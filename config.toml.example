@@ -33,6 +33,7 @@ logbook_org_renderer = "render_ag_org:render_candidate"
 # different filter set.
 [reports.my-weekly-comments]
 type = "qa"
+title = "My Weekly Comments"
 last = "week"
 filter_by_results = "comment"
 # Equivalent forms:
@@ -43,3 +44,4 @@ filter_by_results = "comment"
 # submitted by one RadMachine user.
 where = ["commenter = <your_username>, commenter = <colleague_username>"]
 render = "html-serve"
+group_by = "equipment"

@@ -632,6 +632,7 @@ token_env = "RADMACHINE_TOKEN"
 
 [reports.my-weekly-comments]
 type = "qa"
+title = "My Weekly Comments"
 last = "week"
 user = "example-user"
 filter_by_results = "comment"
@@ -663,7 +664,7 @@ render = "plaintext"
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "QA Report: 2026-07-17 to 2026-07-24" in captured.out
+    assert "My Weekly Comments: 2026-07-17 to 2026-07-24" in captured.out
     assert "Comment by preset user" in captured.out
     assert "Comment by other user" not in captured.out
     assert "Action result" not in captured.out
@@ -1026,6 +1027,48 @@ token_env = "RADMACHINE_TOKEN"
     assert "QA Report" in captured.out
     assert "Failing geometry" in captured.out
     assert captured.err == ""
+
+
+def test_cli_groups_qa_report_by_date(capsys, tmp_path, monkeypatch) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[radmachine]
+base_url = "{base_url}"
+customer_id = "{customer_id}"
+token_env = "RADMACHINE_TOKEN"
+""".strip().format(base_url=TEST_BASE_URL, customer_id=TEST_CUSTOMER_ID)
+    )
+    monkeypatch.setenv("RADMACHINE_TOKEN", "secret-token")
+    report = QaReport(
+        start="2026-07-14",
+        end="2026-07-21",
+        issues=[_issue("action", "Failing geometry")],
+    )
+
+    with patch("radlog.cli.collect_qa_report", return_value=report):
+        exit_code = main(
+            [
+                "--config",
+                str(config_file),
+                "--report",
+                "qa",
+                "--start",
+                "2026-07-14",
+                "--end",
+                "2026-07-21",
+                "--render",
+                "html",
+                "--group-by",
+                "date",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "grouped by" not in captured.out
+    assert "2026-07-20" in captured.out
 
 
 def test_cli_serves_qa_html(capsys, tmp_path, monkeypatch) -> None:

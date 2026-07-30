@@ -222,7 +222,19 @@ python -m radlog.cli \
   --last-week \
   --user gillmanas \
   --filter-by-results all \
+  --group-by equipment \
   --render plaintext
+#+end_src
+
+HTML and plaintext reports can be grouped by =equipment=, the default, or by
+=date=:
+
+#+begin_src sh
+python -m radlog.cli \
+  --report qa \
+  --last-week \
+  --group-by date \
+  --render html-serve
 #+end_src
 
 You can also define named report presets in =config.toml=:
@@ -230,10 +242,12 @@ You can also define named report presets in =config.toml=:
 #+begin_src toml
 [reports.my-weekly-comments]
 type = "qa"
+title = "My Weekly Comments"
 last = "week"
 filter_by_results = "comment"
 where = ["commenter = gillmanas, commenter = colleague-user"]
 render = "html-serve"
+group_by = "equipment"
 #+end_src
 
 Comma is a low-precedence OR, matching =find= style. This is equivalent to:
@@ -252,12 +266,14 @@ Then run:
 python -m radlog.cli --report my-weekly-comments
 #+end_src
 
-Preset time window and renderer are defaults, so they can be overridden:
+Preset time window, renderer, and grouping are defaults, so they can be
+overridden:
 
 #+begin_src sh
 python -m radlog.cli \
   --report my-weekly-comments \
   --last-month \
+  --group-by date \
   --render plaintext
 #+end_src
 

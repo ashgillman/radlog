@@ -58,9 +58,11 @@ REPORT_TYPES = {"qa"}
 @dataclass(slots=True)
 class ReportOptions:
     report_type: str
+    title: str
     start: str | None
     end: str | None
     render: str
+    group_by: str
     user: str | None
     issue_types: set[str]
     filters: list
@@ -104,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Find-style report filter expression. Repeat expressions are combined with implicit AND.",
     )
     parser.add_argument("--render", choices=("json", "plaintext", "html", "html-serve"), default=None)
+    parser.add_argument(
+        "--group-by",
+        choices=("equipment", "date"),
+        default=None,
+        help="Group report output by equipment or by performed date.",
+    )
     parser.add_argument(
         "--profile",
         action="store_true",
@@ -232,13 +240,13 @@ def main(argv: list[str] | None = None) -> int:
             if profile is not None:
                 _write_report_profile(profile)
             if report_options.render == "plaintext":
-                sys.stdout.write(_render_qa_plaintext(report))
+                sys.stdout.write(_render_qa_plaintext(report, title=report_options.title, group_by=report_options.group_by))
                 return 0
             if report_options.render == "html":
-                sys.stdout.write(render_qa_html(report))
+                sys.stdout.write(render_qa_html(report, title=report_options.title, group_by=report_options.group_by))
                 return 0
             if report_options.render == "html-serve":
-                _serve_html(render_qa_html(report))
+                _serve_html(render_qa_html(report, title=report_options.title, group_by=report_options.group_by))
                 return 0
             server_payload = None
             collected_payload = None
@@ -372,9 +380,13 @@ def _resolve_report_options(
         raise ConfigError(f"Unknown report type {report_type!r} for --report {args.report!r}")
 
     _reject_ambiguous_filter_overrides(args, preset)
+    title = (preset.title if preset else None) or "QA Report"
     render = args.render or (preset.render if preset else None) or "json"
     if render not in {"json", "plaintext", "html", "html-serve"}:
         raise ConfigError(f"Unknown render value {render!r} in report preset {args.report!r}")
+    group_by = args.group_by or (preset.group_by if preset else None) or "equipment"
+    if group_by not in {"equipment", "date"}:
+        raise ConfigError(f"Unknown group_by value {group_by!r} in report preset {args.report!r}")
 
     start, end = _report_dates_from_args_or_preset(args, preset, report_type, default_start, default_end)
     issue_types = cli_report_issue_types or _parse_report_filters(preset.filter_by_results if preset else None)
@@ -389,9 +401,11 @@ def _resolve_report_options(
 
     return ReportOptions(
         report_type=report_type,
+        title=title,
         start=start,
         end=end,
         render=render,
+        group_by=group_by,
         user=user or config.radmachine.username,
         issue_types=issue_types,
         filters=filters,
@@ -567,11 +581,11 @@ def _write_report_profile(profile: ReportCollectionProfile) -> None:
     print(f"  seconds_flattening: {profile.seconds_flattening:.3f}", file=sys.stderr)
 
 
-def _render_qa_plaintext(report: QaReport) -> str:
-    lines = [f"QA Report: {report.start} to {report.end}"]
+def _render_qa_plaintext(report: QaReport, *, title: str = "QA Report", group_by: str = "equipment") -> str:
+    lines = [f"{title}: {report.start} to {report.end}"]
     grouped: dict[str, list[QaIssue]] = {}
     for issue in report.issues:
-        grouped.setdefault(issue.equipment_group or "Unknown equipment", []).append(issue)
+        grouped.setdefault(_report_group_key(issue, group_by), []).append(issue)
 
     for equipment in sorted(grouped):
         lines.extend(["", equipment])
@@ -591,6 +605,12 @@ def _render_qa_plaintext(report: QaReport) -> str:
                 lines.append(f"  Comment: {issue.comment}")
     lines.append("")
     return "\n".join(lines)
+
+
+def _report_group_key(issue: QaIssue, group_by: str) -> str:
+    if group_by == "date":
+        return issue.performed_at[:10] if issue.performed_at else "unknown-date"
+    return issue.equipment_group or "Unknown equipment"
 
 
 def _serve_html(html: str, *, host: str = "127.0.0.1", port: int = 0) -> None:
