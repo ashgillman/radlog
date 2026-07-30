@@ -12,35 +12,53 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass, field
 from datetime import date as Date
+from datetime import timedelta
 import json
-from pathlib import Path
 from typing import Any
 
 from radlog.api import RadMachineClient
-from radlog.config import load_config
-from radlog.rm_models import TestListInstance, split_unit_name
+from radlog.collect import ResolvedQaSession as ResolvedSession
+from radlog.collect import collect_resolved_qa_sessions_for_collections
+from radlog.collect import collect_unit_test_collections, resolve_qa_session
+from radlog.config import load_config, resolve_config_path
+from radlog.qa_results import attach_test_result_slugs, numeric_test_value_by_slug
+from radlog.rm_models import TestListInstance
 
 
 DEFAULT_SESSION_IDS = [15073, 15074, 15079, 15078, 15077, 15076, 15075, 15091, 15093]
 TARGET_UTC_ID = 111
+RELATIVE_DATE_WINDOWS = {
+    "day": 1,
+    "week": 7,
+    "month": 30,
+}
 
-# These order maps are deliberately kept in this example module because they
-# are TCC workflow knowledge, not stable RadMachine API semantics.
-PHOTON_QUICKCHECK_OUTPUT_ORDER = {
-    "6 MV": 3,
-    "6 FFF": 6,
-    "10 MV": 12,
+# These maps are deliberately kept in this example module because they are TCC
+# workflow knowledge, not stable RadMachine API semantics.
+PHOTON_QUICKCHECK_OUTPUT_SLUGS = {
+    "6 MV": "quickcheck_cax_output_6_mv",
+    "6 FFF": "quickcheck_cax_output_6_mv_fff",
+    "10 MV": "quickcheck_cax_output_10_mv",
 }
-ELECTRON_QUICKCHECK_OUTPUT_ORDER = {
-    "6 MeV": 3,
-    "8 MeV": 8,
-    "10 MeV": 13,
-    "12 MeV": 18,
-    "15 MeV": 23,
+ELECTRON_QUICKCHECK_OUTPUT_SLUGS = {
+    "6 MeV": "quickcheck_cax_output_6_mev",
+    "8 MeV": "quickcheck_cax_output_8_mev",
+    "10 MeV": "quickcheck_cax_output_10_mev",
+    "12 MeV": "quickcheck_cax_output_12_mev",
+    "15 MeV": "quickcheck_cax_output_15_mev",
 }
-PHOTON_SOLID_WATER_DEVIATION_ORDER = 22
-ELECTRON_SOLID_WATER_DEVIATION_ORDER = 12
 QUICKCHECK_SERIAL_ORDER = 0
+
+MONTHLY_OUTPUT_DEVIATION_SLUGS = {
+    "6 MV": "linac_monthly_output_deviation_6_mv",
+    "6 FFF": "linac_monthly_output_deviation_6_fff",
+    "10 MV": "linac_monthly_output_deviation_10_mv",
+    "6 MeV": "linac_monthly_output_deviation_6_mev",
+    "8 MeV": "linac_monthly_output_deviation_8_mev",
+    "10 MeV": "linac_monthly_output_deviation_10_mev",
+    "12 MeV": "linac_monthly_output_deviation_12_mev",
+    "15 MeV": "linac_monthly_output_deviation_15_mev",
+}
 
 TARGET_OUTPUT_SLUGS = {
     "6 MV": "quickcheck_constancy_output_6mv",
@@ -65,19 +83,14 @@ TARGET_SOLID_WATER_SLUGS = {
 
 
 @dataclass(slots=True)
-class ResolvedSession:
-    session: TestListInstance
-    collection_name: str
-    unit_name: str
+class SourceSelection:
+    role: str
+    label: str
+    options: list[ResolvedSession] = field(default_factory=list)
 
     @property
-    def session_id(self) -> str:
-        return self.session.remote_id
-
-    @property
-    def short_unit_name(self) -> str | None:
-        unit, _site = split_unit_name(self.unit_name)
-        return unit
+    def default(self) -> ResolvedSession | None:
+        return self.options[0] if self.options else None
 
 
 @dataclass(slots=True)
@@ -86,7 +99,13 @@ class EnergyDraft:
     quickcheck_output: float | None = None
     solid_water_output_deviation: float | None = None
     quickcheck_session_id: str | None = None
+    quickcheck_url: str | None = None
+    quickcheck_work_started: str | None = None
+    quickcheck_work_completed: str | None = None
     monthly_session_id: str | None = None
+    monthly_url: str | None = None
+    monthly_work_started: str | None = None
+    monthly_work_completed: str | None = None
 
 
 @dataclass(slots=True)
@@ -95,6 +114,8 @@ class QuickcheckConstancyDraft:
     quickcheck_serial: str | None
     target_utc_id: int = TARGET_UTC_ID
     source_session_ids: list[str] = field(default_factory=list)
+    work_started: str | None = None
+    work_completed: str | None = None
     energies: dict[str, EnergyDraft] = field(default_factory=dict)
     target_values: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -106,54 +127,84 @@ class QuickcheckConstancyDraft:
 
 
 def load_sessions_by_ids(client: RadMachineClient, session_ids: list[int]) -> list[ResolvedSession]:
-    return [resolve_session(client, session_id) for session_id in session_ids]
+    sessions = [resolve_qa_session(client, session_id) for session_id in session_ids]
+    attach_test_definition_slugs(client, sessions)
+    return sessions
 
 
-def resolve_session(client: RadMachineClient, session_id: int | str) -> ResolvedSession:
-    session_payload = client.get_json(f"qa/testlistinstances/{session_id}/")
-    if not isinstance(session_payload, dict):
-        raise ValueError(f"Expected session object for {session_id}")
-    session = TestListInstance.from_api(session_payload)
+def discover_source_sessions(
+    client: RadMachineClient,
+    linac: str,
+    start_date: str,
+    end_date: str | None = None,
+    selected_date: str | None = None,
+    ui: str = "args",
+) -> list[SourceSelection]:
+    """Find source sessions by anchoring on monthly dosimetry.
 
-    collection_payload = client.get_json(session.unit_test_collection or "")
-    if not isinstance(collection_payload, dict):
-        raise ValueError(f"Expected collection object for session {session_id}")
+    Monthly dosimetry is much less frequent than QuickCheck, so it is used to
+    choose the actual source date before same-day QuickCheck sessions are read.
+    """
+    end_date = end_date or start_date
+    monthly_sessions = discover_monthly_source_sessions(client, linac, start_date, end_date)
+    selected_date = selected_date or select_monthly_source_date(_session_dates(monthly_sessions), ui=ui)
+    monthly_for_date = _sessions_on_date(monthly_sessions, selected_date)
+    if not monthly_for_date:
+        raise SystemExit(f"No monthly dosimetry source sessions found for {linac} on {selected_date}")
+    quickcheck_for_date = discover_quickcheck_source_sessions(client, linac, selected_date)
+    return _source_selections(monthly_for_date + quickcheck_for_date)
 
-    unit_payload = client.get_json(collection_payload.get("unit") or "")
-    if not isinstance(unit_payload, dict):
-        raise ValueError(f"Expected unit object for session {session_id}")
 
-    return ResolvedSession(
-        session=session,
-        collection_name=str(collection_payload.get("name") or ""),
-        unit_name=str(unit_payload.get("name") or ""),
+def discover_monthly_source_sessions(
+    client: RadMachineClient,
+    linac: str,
+    start_date: str,
+    end_date: str,
+) -> list[ResolvedSession]:
+    collections = collect_unit_test_collections(
+        client,
+        unit=linac,
+        collection_name_matches=_is_monthly_source_collection,
     )
+    sessions = collect_resolved_qa_sessions_for_collections(
+        client,
+        collections,
+        start=start_date,
+        end=end_date,
+        extra_params={"limit": "20"},
+    )
+    attach_test_definition_slugs(client, sessions)
+    return sessions
+
+
+def discover_quickcheck_source_sessions(client: RadMachineClient, linac: str, performed_date: str) -> list[ResolvedSession]:
+    collections = collect_unit_test_collections(
+        client,
+        unit=linac,
+        collection_name_matches=_is_quickcheck_source_collection,
+    )
+    sessions = collect_resolved_qa_sessions_for_collections(
+        client,
+        collections,
+        start=performed_date,
+        end=performed_date,
+        extra_params={"limit": "20"},
+    )
+    attach_test_definition_slugs(client, sessions)
+    return sessions
+
+
+def attach_test_definition_slugs(client: RadMachineClient, sessions: list[ResolvedSession]) -> None:
+    attach_test_result_slugs(client, [resolved.session for resolved in sessions])
 
 
 def find_sessions_for_linac_date(client: RadMachineClient, linac: str, performed_date: str) -> list[ResolvedSession]:
-    """Find likely source sessions for a linac/date, defaulting duplicates to latest.
+    """Find likely source sessions for a linac/date, defaulting duplicates to latest."""
+    return select_latest_source_sessions(discover_source_sessions(client, linac, performed_date, selected_date=performed_date))
 
-    This intentionally filters client-side because the exact DRF range filters
-    are not documented consistently enough to bake into this example yet.
-    """
-    candidates: list[ResolvedSession] = []
-    for session in client.qa_test_list_instances(params={"ordering": "-work_completed", "limit": "300"}):
-        if not session.performed_at or session.performed_at[:10] != performed_date:
-            continue
-        collection_payload = client.get_json(session.unit_test_collection or "")
-        if not isinstance(collection_payload, dict):
-            continue
-        unit_payload = client.get_json(collection_payload.get("unit") or "")
-        if not isinstance(unit_payload, dict):
-            continue
-        resolved = ResolvedSession(
-            session=session,
-            collection_name=str(collection_payload.get("name") or ""),
-            unit_name=str(unit_payload.get("name") or ""),
-        )
-        if resolved.short_unit_name == linac and _is_relevant_source_collection(resolved.collection_name):
-            candidates.append(resolved)
-    return _latest_session_per_collection(candidates)
+
+def select_latest_source_sessions(selections: list[SourceSelection]) -> list[ResolvedSession]:
+    return [selection.default for selection in selections if selection.default is not None]
 
 
 def compile_quickcheck_constancy(sessions: list[ResolvedSession]) -> QuickcheckConstancyDraft:
@@ -162,6 +213,8 @@ def compile_quickcheck_constancy(sessions: list[ResolvedSession]) -> QuickcheckC
         linac=linacs[0] if len(linacs) == 1 else None,
         quickcheck_serial=None,
         source_session_ids=[session.session_id for session in sessions],
+        work_started=_earliest_work_started(sessions),
+        work_completed=_latest_work_completed(sessions),
     )
     if len(linacs) > 1:
         draft.warnings.append(f"Multiple linacs found in source sessions: {', '.join(linacs)}")
@@ -169,22 +222,26 @@ def compile_quickcheck_constancy(sessions: list[ResolvedSession]) -> QuickcheckC
     for session in sessions:
         collection = session.collection_name
         if collection == "Quickcheck Photons":
-            _add_quickcheck_outputs(draft, session, PHOTON_QUICKCHECK_OUTPUT_ORDER)
+            _add_quickcheck_outputs(draft, session, PHOTON_QUICKCHECK_OUTPUT_SLUGS)
             _add_quickcheck_serial(draft, session)
         elif collection == "Quickcheck Electrons":
-            _add_quickcheck_outputs(draft, session, ELECTRON_QUICKCHECK_OUTPUT_ORDER)
+            _add_quickcheck_outputs(draft, session, ELECTRON_QUICKCHECK_OUTPUT_SLUGS)
             _add_quickcheck_serial(draft, session)
         elif collection.startswith("Linac Monthly :: Dosimetry :: Output and relative dosimetry :: "):
             energy = collection.rsplit(" :: ", 1)[-1]
-            _add_solid_water_output(draft, session, energy, PHOTON_SOLID_WATER_DEVIATION_ORDER)
+            _add_solid_water_output(draft, session, energy)
         elif collection.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: "):
             energy = collection.rsplit(" :: ", 1)[-1]
-            _add_solid_water_output(draft, session, energy, ELECTRON_SOLID_WATER_DEVIATION_ORDER)
+            _add_solid_water_output(draft, session, energy)
         else:
             draft.warnings.append(f"Ignored unsupported source collection {collection!r} from session {session.session_id}")
 
     if draft.linac:
         draft.target_values["linac_selection"] = draft.linac
+    if draft.work_started:
+        draft.target_values["work_started"] = draft.work_started
+    if draft.work_completed:
+        draft.target_values["work_completed"] = draft.work_completed
     for energy, energy_draft in draft.energies.items():
         output_slug = TARGET_OUTPUT_SLUGS.get(energy)
         if output_slug and energy_draft.quickcheck_output is not None:
@@ -197,14 +254,17 @@ def compile_quickcheck_constancy(sessions: list[ResolvedSession]) -> QuickcheckC
     return draft
 
 
-def _add_quickcheck_outputs(draft: QuickcheckConstancyDraft, session: ResolvedSession, order_map: dict[str, int]) -> None:
-    for energy, order in order_map.items():
-        value = _numeric_value_at_order(session.session, order)
+def _add_quickcheck_outputs(draft: QuickcheckConstancyDraft, session: ResolvedSession, slug_map: dict[str, str]) -> None:
+    for energy, slug in slug_map.items():
+        value = numeric_test_value_by_slug(session.session, slug)
         if value is None:
             continue
         energy_draft = draft.energies.setdefault(energy, EnergyDraft(energy=energy))
         energy_draft.quickcheck_output = value
         energy_draft.quickcheck_session_id = session.session_id
+        energy_draft.quickcheck_url = session.session.site_url
+        energy_draft.quickcheck_work_started = session.session.work_started
+        energy_draft.quickcheck_work_completed = session.session.work_completed
 
 
 def _add_quickcheck_serial(draft: QuickcheckConstancyDraft, session: ResolvedSession) -> None:
@@ -216,13 +276,31 @@ def _add_quickcheck_serial(draft: QuickcheckConstancyDraft, session: ResolvedSes
     draft.quickcheck_serial = serial
 
 
-def _add_solid_water_output(draft: QuickcheckConstancyDraft, session: ResolvedSession, energy: str, order: int) -> None:
-    value = _numeric_value_at_order(session.session, order)
+def _add_solid_water_output(draft: QuickcheckConstancyDraft, session: ResolvedSession, energy: str) -> None:
+    slug = MONTHLY_OUTPUT_DEVIATION_SLUGS.get(energy)
+    if slug is None:
+        draft.warnings.append(f"No monthly output-deviation slug configured for {energy}")
+        return
+    value = numeric_test_value_by_slug(session.session, slug)
     if value is None:
+        draft.warnings.append(f"Missing source result {slug} in monthly session {session.session_id}")
         return
     energy_draft = draft.energies.setdefault(energy, EnergyDraft(energy=energy))
     energy_draft.solid_water_output_deviation = value
     energy_draft.monthly_session_id = session.session_id
+    energy_draft.monthly_url = session.session.site_url
+    energy_draft.monthly_work_started = session.session.work_started
+    energy_draft.monthly_work_completed = session.session.work_completed
+
+
+def _earliest_work_started(sessions: list[ResolvedSession]) -> str | None:
+    values = [session.session.work_started for session in sessions if session.session.work_started]
+    return min(values) if values else None
+
+
+def _latest_work_completed(sessions: list[ResolvedSession]) -> str | None:
+    values = [session.session.work_completed for session in sessions if session.session.work_completed]
+    return max(values) if values else None
 
 
 def _numeric_value_at_order(session: TestListInstance, order: int) -> float | None:
@@ -258,60 +336,253 @@ def _add_missing_value_warnings(draft: QuickcheckConstancyDraft) -> None:
             draft.warnings.append(f"Missing monthly solid-water output deviation for {energy}")
 
 
-def _is_relevant_source_collection(name: str) -> bool:
-    return (
-        name in {"Quickcheck Photons", "Quickcheck Electrons"}
-        or name.startswith("Linac Monthly :: Dosimetry :: Output and relative dosimetry :: ")
-        or name.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: ")
-    )
+def _is_quickcheck_source_collection(name: str) -> bool:
+    return name in {"Quickcheck Photons", "Quickcheck Electrons"}
 
 
-def _latest_session_per_collection(sessions: list[ResolvedSession]) -> list[ResolvedSession]:
-    latest: dict[str, ResolvedSession] = {}
+def _is_monthly_source_collection(name: str) -> bool:
+    return name.startswith(
+        "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: "
+    ) or name.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: ")
+
+
+def _session_dates(sessions: list[ResolvedSession]) -> list[str]:
+    dates = {date for session in sessions if (date := _session_date(session))}
+    return sorted(dates, reverse=True)
+
+
+def _session_date(session: ResolvedSession) -> str | None:
+    return session.session.performed_at[:10] if session.session.performed_at else None
+
+
+def _sessions_on_date(sessions: list[ResolvedSession], selected_date: str) -> list[ResolvedSession]:
+    return [session for session in sessions if _session_date(session) == selected_date]
+
+
+def select_monthly_source_date(dates: list[str], ui: str = "args") -> str:
+    if not dates:
+        raise SystemExit("No monthly dosimetry source sessions found in the requested date range")
+    if len(dates) == 1:
+        return dates[0]
+    if ui == "gui":
+        return select_monthly_source_date_gui(dates)
+    return select_monthly_source_date_tui(dates)
+
+
+def select_monthly_source_date_tui(dates: list[str]) -> str:
+    print("\nMonthly dosimetry dates:")
+    for index, performed_date in enumerate(dates, start=1):
+        print(f"  {index}. {performed_date}")
+    raw_choice = input("Select monthly source date [1]: ").strip()
+    choice = int(raw_choice or "1")
+    if choice < 1 or choice > len(dates):
+        raise SystemExit(f"Invalid monthly source date selection {choice}")
+    return dates[choice - 1]
+
+
+def select_monthly_source_date_gui(dates: list[str]) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+    except ImportError as exc:  # pragma: no cover
+        raise SystemExit(f"tkinter is not available: {exc}")
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        prompt = "\n".join(f"{index}. {performed_date}" for index, performed_date in enumerate(dates, start=1))
+        choice = simpledialog.askinteger(
+            "Select Monthly Dosimetry Date",
+            f"Monthly dosimetry dates\n\n{prompt}\n\nSelection",
+            initialvalue=1,
+            minvalue=1,
+            maxvalue=len(dates),
+        )
+        if choice is None:
+            raise SystemExit("Monthly source date selection cancelled")
+        return dates[choice - 1]
+    finally:
+        root.destroy()
+
+
+def _source_selections(sessions: list[ResolvedSession]) -> list[SourceSelection]:
+    grouped: dict[str, list[ResolvedSession]] = {}
+    labels: dict[str, str] = {}
     for session in sessions:
-        current = latest.get(session.collection_name)
-        if current is None or (session.session.performed_at or "") > (current.session.performed_at or ""):
-            latest[session.collection_name] = session
-    return list(latest.values())
+        role = _source_role(session.collection_name)
+        if role is None:
+            continue
+        grouped.setdefault(role, []).append(session)
+        labels[role] = _source_label(session.collection_name)
+
+    selections: list[SourceSelection] = []
+    for role in sorted(grouped, key=_source_role_sort_key):
+        options = sorted(grouped[role], key=lambda session: session.session.performed_at or "", reverse=True)
+        selections.append(SourceSelection(role=role, label=labels[role], options=options))
+    return selections
+
+
+def _source_role(collection_name: str) -> str | None:
+    if collection_name == "Quickcheck Photons":
+        return "quickcheck_photons"
+    if collection_name == "Quickcheck Electrons":
+        return "quickcheck_electrons"
+    if collection_name.startswith("Linac Monthly :: Dosimetry :: Output and relative dosimetry :: "):
+        energy = collection_name.rsplit(" :: ", 1)[-1]
+        return f"monthly_photon_{energy}"
+    if collection_name.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: "):
+        energy = collection_name.rsplit(" :: ", 1)[-1]
+        return f"monthly_electron_{energy}"
+    return None
+
+
+def _source_label(collection_name: str) -> str:
+    if collection_name == "Quickcheck Photons":
+        return "Daily QuickCheck photons"
+    if collection_name == "Quickcheck Electrons":
+        return "Daily QuickCheck electrons"
+    if collection_name.startswith("Linac Monthly :: Dosimetry :: "):
+        return collection_name.replace("Linac Monthly :: Dosimetry :: ", "Monthly dosimetry :: ")
+    return collection_name
+
+
+def _source_role_sort_key(role: str) -> tuple[int, str]:
+    if role == "quickcheck_photons":
+        return (0, role)
+    if role == "quickcheck_electrons":
+        return (1, role)
+    if role.startswith("monthly_photon_"):
+        return (2, role)
+    if role.startswith("monthly_electron_"):
+        return (3, role)
+    return (9, role)
+
+
+def select_source_sessions_tui(selections: list[SourceSelection]) -> list[ResolvedSession]:
+    selected: list[ResolvedSession] = []
+    for selection in selections:
+        if not selection.options:
+            continue
+        if len(selection.options) == 1:
+            selected.append(selection.options[0])
+            continue
+
+        print(f"\n{selection.label}:")
+        for index, option in enumerate(selection.options, start=1):
+            print(f"  {index}. session {option.session_id} at {option.session.performed_at or 'unknown time'}")
+        raw_choice = input("Select source session [1]: ").strip()
+        choice = int(raw_choice or "1")
+        if choice < 1 or choice > len(selection.options):
+            raise SystemExit(f"Invalid selection {choice} for {selection.label}")
+        selected.append(selection.options[choice - 1])
+    return selected
+
+
+def select_source_sessions_gui(selections: list[SourceSelection]) -> list[ResolvedSession]:
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+    except ImportError as exc:  # pragma: no cover
+        raise SystemExit(f"tkinter is not available: {exc}")
+
+    root = tk.Tk()
+    root.withdraw()
+    selected: list[ResolvedSession] = []
+    try:
+        for selection in selections:
+            if not selection.options:
+                continue
+            if len(selection.options) == 1:
+                selected.append(selection.options[0])
+                continue
+            prompt = "\n".join(
+                f"{index}. session {option.session_id} at {option.session.performed_at or 'unknown time'}"
+                for index, option in enumerate(selection.options, start=1)
+            )
+            choice = simpledialog.askinteger(
+                "Select QuickCheck source",
+                f"{selection.label}\n\n{prompt}\n\nSelection",
+                initialvalue=1,
+                minvalue=1,
+                maxvalue=len(selection.options),
+            )
+            if choice is None:
+                raise SystemExit("Source selection cancelled")
+            selected.append(selection.options[choice - 1])
+    finally:
+        root.destroy()
+    return selected
 
 
 def tui_args(args: argparse.Namespace) -> argparse.Namespace:
     if args.session_id or args.default_example_sessions:
         return args
     args.linac = args.linac or input("Linac: ").strip()
-    args.date = args.date or input(f"Date [{Date.today().isoformat()}]: ").strip() or Date.today().isoformat()
     return args
 
 
 def gui_args(args: argparse.Namespace) -> argparse.Namespace:
     try:
         import tkinter as tk
-        import tkinter.simpledialog as dialog
+        from tkinter import simpledialog
     except ImportError as exc:  # pragma: no cover
         raise SystemExit(f"tkinter is not available: {exc}")
 
     root = tk.Tk()
     root.withdraw()
     if not args.session_id and not args.default_example_sessions:
-        args.linac = args.linac or dialog.askstring("QuickCheck Constancy", "Linac")
-        args.date = args.date or dialog.askstring(
-            "QuickCheck Constancy",
-            "Date",
-            initialvalue=Date.today().isoformat(),
-        )
+        args.linac = args.linac or simpledialog.askstring("Monthly QuickCheck QA", "Linac")
     root.destroy()
     return args
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build a dry-run TCC QuickCheck constancy payload")
-    parser.add_argument("--config", default="config.toml")
+    parser = argparse.ArgumentParser(description="Build a dry-run TCC Monthly QuickCheck QA payload")
+    parser.add_argument("--config")
     parser.add_argument("--session-id", type=int, action="append", default=[])
     parser.add_argument("--linac")
-    parser.add_argument("--date", default=Date.today().isoformat())
+    parser.add_argument("--date")
+    parser.add_argument("--last-day", action="store_true", help="Search source sessions from the last day.")
+    parser.add_argument("--last-week", action="store_true", help="Search source sessions from the last seven days.")
+    parser.add_argument("--last-month", action="store_true", help="Search source sessions from the last thirty days.")
     parser.add_argument("--ui", choices=("args", "tui", "gui"), default="args")
     parser.add_argument("--default-example-sessions", action="store_true")
+    parser.add_argument(
+        "--interactive-select",
+        action="store_true",
+        help="Prompt to select among duplicate matching source sessions; otherwise latest is used.",
+    )
     return parser
+
+
+def source_date_range(args: argparse.Namespace, today: Date | None = None) -> tuple[str, str]:
+    relative_window = _selected_relative_window(args)
+    if relative_window and args.date:
+        raise ValueError("--date cannot be combined with --last-day, --last-week, or --last-month")
+
+    today = today or Date.today()
+    if relative_window:
+        end_date = today
+        start_date = end_date - timedelta(days=RELATIVE_DATE_WINDOWS[relative_window])
+        return start_date.isoformat(), end_date.isoformat()
+
+    selected_date = args.date or today.isoformat()
+    return selected_date, selected_date
+
+
+def _selected_relative_window(args: argparse.Namespace) -> str | None:
+    selected = [
+        name
+        for name, enabled in (
+            ("day", args.last_day),
+            ("week", args.last_week),
+            ("month", args.last_month),
+        )
+        if enabled
+    ]
+    if len(selected) > 1:
+        raise ValueError("--last-day, --last-week, and --last-month are mutually exclusive")
+    return selected[0] if selected else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -323,13 +594,32 @@ def main(argv: list[str] | None = None) -> int:
         args = gui_args(args)
 
     session_ids = DEFAULT_SESSION_IDS if args.default_example_sessions else args.session_id
-    client = RadMachineClient(load_config(Path(args.config)))
+    config_path = resolve_config_path(args.config)
+    client = RadMachineClient(load_config(config_path))
     if session_ids:
         sessions = load_sessions_by_ids(client, session_ids)
     else:
         if not args.linac:
             parser.error("provide --linac/--date, --session-id, or --default-example-sessions")
-        sessions = find_sessions_for_linac_date(client, args.linac, args.date)
+        try:
+            start_date, end_date = source_date_range(args)
+        except ValueError as exc:
+            parser.error(str(exc))
+        selections = discover_source_sessions(
+            client,
+            args.linac,
+            start_date,
+            end_date,
+            selected_date=args.date,
+            ui=args.ui,
+        )
+        if args.interactive_select or args.ui in {"tui", "gui"}:
+            if args.ui == "gui":
+                sessions = select_source_sessions_gui(selections)
+            else:
+                sessions = select_source_sessions_tui(selections)
+        else:
+            sessions = select_latest_source_sessions(selections)
 
     draft = compile_quickcheck_constancy(sessions)
     print(json.dumps(draft.to_jsonable(), indent=2, sort_keys=True))

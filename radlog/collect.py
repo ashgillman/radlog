@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 
 from .api import RadMachineClient
 from .models import SourceRecord
@@ -14,6 +15,173 @@ from .rm_models import (
     TestListInstance,
     extract_id,
 )
+
+
+@dataclass(slots=True)
+class ResolvedQaSession:
+    session: TestListInstance
+    collection: UnitTestCollection
+    unit: Unit
+
+    @property
+    def session_id(self) -> str:
+        return self.session.remote_id
+
+    @property
+    def collection_name(self) -> str:
+        return self.collection.name or ""
+
+    @property
+    def unit_name(self) -> str:
+        return self.unit.name or ""
+
+    @property
+    def short_unit_name(self) -> str | None:
+        unit_name, _site = self.unit.short_name_and_site
+        return unit_name
+
+
+def collect_units(
+    client: RadMachineClient,
+    *,
+    unit: str | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> list[Unit]:
+    """Collect unit records, optionally matching full or short unit name."""
+    params = dict(extra_params or {})
+    params.setdefault("limit", "100")
+
+    records: list[Unit] = []
+    for payload in client.paginate("units/units", params=params):
+        record = Unit.from_api(payload)
+        if unit and unit not in {record.name, record.short_name_and_site[0]}:
+            continue
+        records.append(record)
+    return records
+
+
+def collect_unit_test_collections(
+    client: RadMachineClient,
+    *,
+    unit: str | None = None,
+    collection_name_matches: Callable[[str], bool] | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> list[UnitTestCollection]:
+    """Collect unit/test-list assignments with optional unit and name filters."""
+    params = dict(extra_params or {})
+    params.setdefault("limit", "100")
+
+    unit_names = _collection_filter_unit_names(client, unit)
+    collections: list[UnitTestCollection] = []
+    for unit_name in unit_names:
+        query = dict(params)
+        if unit_name:
+            query.setdefault("unit__name", unit_name)
+        for payload in client.paginate("qa/unittestcollections", params=query):
+            collection = UnitTestCollection.from_api(payload)
+            if collection_name_matches and not collection_name_matches(collection.name or ""):
+                continue
+            collections.append(collection)
+    return collections
+
+
+def collect_resolved_qa_sessions_for_collections(
+    client: RadMachineClient,
+    collections: list[UnitTestCollection],
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> list[ResolvedQaSession]:
+    """Collect performed QA sessions for already-selected assignments."""
+    params = dict(extra_params or {})
+    params.setdefault("limit", "100")
+    params.setdefault("ordering", "-work_completed")
+    descending_by_completion = params.get("ordering") == "-work_completed"
+
+    sessions: list[ResolvedQaSession] = []
+    cache: dict[str, dict] = {}
+    for collection in collections:
+        query = dict(params)
+        query.setdefault("unit_test_collection", collection.remote_id)
+        unit_record = Unit.from_api(_fetch_json(client, cache, collection.unit) if collection.unit else {})
+        for session_payload in client.paginate("qa/testlistinstances", params=query):
+            session = TestListInstance.from_api(session_payload)
+            performed_at = session.performed_at
+            if start and performed_at is not None and performed_at[:10] < start:
+                if descending_by_completion:
+                    break
+                continue
+            if end and (performed_at is None or performed_at[:10] > end):
+                continue
+            sessions.append(ResolvedQaSession(session=session, collection=collection, unit=unit_record))
+    return sessions
+
+
+def _collection_filter_unit_names(client: RadMachineClient, unit: str | None) -> list[str | None]:
+    if not unit:
+        return [None]
+    if " - " in unit:
+        return [unit]
+    return [record.name for record in collect_units(client, unit=unit) if record.name]
+
+
+def collect_resolved_qa_sessions(
+    client: RadMachineClient,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    user: str | None = None,
+    unit: str | None = None,
+    collection_name_matches: Callable[[str], bool] | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> list[ResolvedQaSession]:
+    """Collect QA sessions with assignment and unit metadata.
+
+    This is the reusable efficient path for workflows that need performed QA
+    sessions rather than normalized logbook records.
+    """
+    params = dict(extra_params or {})
+    params.setdefault("limit", "100")
+    params.setdefault("ordering", "-work_completed")
+    descending_by_completion = params.get("ordering") == "-work_completed"
+    if user:
+        params.setdefault("created_by__username", user)
+
+    sessions: list[ResolvedQaSession] = []
+    cache: dict[str, dict] = {}
+    for session_payload in client.paginate("qa/testlistinstances", params=params):
+        session = TestListInstance.from_api(session_payload)
+        performed_at = session.performed_at
+        if start and performed_at is not None and performed_at[:10] < start:
+            if descending_by_completion:
+                break
+            continue
+        if end and (performed_at is None or performed_at[:10] > end):
+            continue
+
+        collection = UnitTestCollection.from_api(_fetch_json(client, cache, session.unit_test_collection))
+        if collection_name_matches and not collection_name_matches(collection.name or ""):
+            continue
+
+        unit_record = Unit.from_api(_fetch_json(client, cache, collection.unit) if collection.unit else {})
+        if unit and unit not in {unit_record.name, unit_record.short_name_and_site[0]}:
+            continue
+        sessions.append(ResolvedQaSession(session=session, collection=collection, unit=unit_record))
+
+    return sessions
+
+
+def resolve_qa_session(client: RadMachineClient, session_id: int | str) -> ResolvedQaSession:
+    """Fetch one QA session with its assignment and unit metadata."""
+    session_payload = client.get_json(f"qa/testlistinstances/{session_id}/")
+    if not isinstance(session_payload, dict):
+        raise ValueError(f"Expected session object for {session_id}")
+    session = TestListInstance.from_api(session_payload)
+    cache: dict[str, dict] = {}
+    collection = UnitTestCollection.from_api(_fetch_json(client, cache, session.unit_test_collection))
+    unit = Unit.from_api(_fetch_json(client, cache, collection.unit) if collection.unit else {})
+    return ResolvedQaSession(session=session, collection=collection, unit=unit)
 
 
 def collect_qa_sessions(

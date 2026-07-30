@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from radlog.collect import (
     collect_qa_sessions,
+    collect_resolved_qa_sessions,
+    collect_resolved_qa_sessions_for_collections,
     collect_service_events,
     collect_service_log_return_to_service_qa,
+    collect_unit_test_collections,
 )
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID
 
@@ -216,6 +219,130 @@ def test_collect_qa_sessions_reuses_collection_and_unit_cache() -> None:
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/206/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/", None),
     ]
+
+
+class ResolvedSearchClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def paginate(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        yield _qa_session_payload("400", "2026-03-10T10:00:00+10:00", "206")
+        yield _qa_session_payload("401", "2026-03-10T11:00:00+10:00", "207")
+        yield _qa_session_payload("399", "2026-02-28T10:00:00+10:00", "206")
+        raise AssertionError("collector should stop once ordered sessions are older than start")
+
+    def get_json(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        if endpoint.endswith("/206/"):
+            return {
+                "name": "Wanted Collection",
+                "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
+            }
+        if endpoint.endswith("/207/"):
+            return {
+                "name": "Other Collection",
+                "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/999/",
+            }
+        if endpoint.endswith("/2/"):
+            return {"name": "LAx - LinacName"}
+        if endpoint.endswith("/999/"):
+            return {"name": "Should Not Be Fetched"}
+        raise AssertionError(endpoint)
+
+
+def test_collect_resolved_qa_sessions_filters_before_unit_fetch_and_stops_early() -> None:
+    client = ResolvedSearchClient()
+
+    sessions = collect_resolved_qa_sessions(
+        client,
+        start="2026-03-01",
+        end="2026-03-31",
+        unit="LAx",
+        collection_name_matches=lambda name: name.startswith("Wanted"),
+    )
+
+    assert [session.session_id for session in sessions] == ["400"]
+    assert sessions[0].collection_name == "Wanted Collection"
+    assert sessions[0].short_unit_name == "LAx"
+    assert client.calls == [
+        ("qa/testlistinstances", {"limit": "100", "ordering": "-work_completed"}),
+        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/206/", None),
+        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/", None),
+        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/207/", None),
+    ]
+
+
+class AssignmentScopedClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def paginate(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        if endpoint == "units/units":
+            yield {"url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/", "name": "LAx - LinacName"}
+            yield {"url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/3/", "name": "LBy - Other"}
+            return
+        if endpoint == "qa/unittestcollections":
+            assert params == {"limit": "100", "unit__name": "LAx - LinacName"}
+            yield {
+                "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/206/",
+                "name": "Wanted Monthly 6 MV",
+                "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
+            }
+            yield {
+                "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/207/",
+                "name": "Other Assignment",
+                "unit": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/2/",
+            }
+            return
+        if endpoint == "qa/testlistinstances":
+            assert params is not None
+            assert params["unit_test_collection"] == "206"
+            yield _qa_session_payload("400", "2026-03-10T10:00:00+10:00", "206")
+            yield _qa_session_payload("399", "2026-02-28T10:00:00+10:00", "206")
+            raise AssertionError("collector should stop once this assignment is older than start")
+        raise AssertionError(endpoint)
+
+    def get_json(self, endpoint: str, params: dict[str, str] | None = None):
+        self.calls.append((endpoint, params))
+        if endpoint.endswith("/2/"):
+            return {"url": endpoint, "name": "LAx - LinacName"}
+        raise AssertionError(endpoint)
+
+
+def test_assignment_scoped_collection_avoids_broad_session_metadata_scan() -> None:
+    client = AssignmentScopedClient()
+
+    collections = collect_unit_test_collections(
+        client,
+        unit="LAx",
+        collection_name_matches=lambda name: name.startswith("Wanted"),
+    )
+    sessions = collect_resolved_qa_sessions_for_collections(
+        client,
+        collections,
+        start="2026-03-01",
+        end="2026-03-31",
+    )
+
+    assert [collection.remote_id for collection in collections] == ["206"]
+    assert [session.session_id for session in sessions] == ["400"]
+    assert ("qa/testlistinstances", {"limit": "100", "ordering": "-work_completed", "unit_test_collection": "206"}) in client.calls
+    assert not any(call[0].endswith("/207/") for call in client.calls)
+
+
+def _qa_session_payload(remote_id: str, work_completed: str, collection_id: str) -> dict:
+    return {
+        "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/{remote_id}/",
+        "created": work_completed,
+        "modified": work_completed,
+        "work_started": work_completed,
+        "work_completed": work_completed,
+        "flagged": False,
+        "reviewed": work_completed,
+        "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/{collection_id}/",
+    }
 
 
 class ServiceEventClient:

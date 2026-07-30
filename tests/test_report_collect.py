@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from radlog.report_collect import collect_qa_report, flatten_test_list
+from radlog.qa_results import flatten_test_list
+from radlog.report_collect import collect_qa_report
 from radlog.report_models import ReportCollectionProfile
 
 from tests.support import TEST_BASE_URL, TEST_CUSTOMER_ID

@@ -307,10 +307,10 @@ of the reusable radlog library.
 Current examples:
 
 - =examples/quickcheck_constancy_tcc.py=
-  - dry-run compiler for a TCC QuickCheck Constancy composite test
+  - dry-run compiler for a TCC Monthly QuickCheck QA composite test
   - reads existing monthly dosimetry and QuickCheck sessions
   - extracts QuickCheck serial, CAX output, and monthly output-deviation values
-  - emits a JSON draft keyed by target QuickCheck Constancy test slugs
+  - emits a JSON draft keyed by target Monthly QuickCheck QA test slugs
   - does not upload, submit, create, patch, or otherwise mutate RadMachine data
 
 Dry-run with the known example sessions:
@@ -330,10 +330,23 @@ python -m examples.quickcheck_constancy_tcc \
   --date 2026-07-07
 #+end_src
 
+Or use the same relative date flags as the main CLI when searching for monthly
+dosimetry source sessions. If multiple monthly dates are found, the script
+prompts for the intended date, then only includes QuickCheck sessions from that
+same day:
+
+#+begin_src sh
+python -m examples.quickcheck_constancy_tcc \
+  --linac LAx \
+  --last-month \
+  --interactive-select
+#+end_src
+
 The example has =--ui tui= and =--ui gui= entry points for linac/date input.
-Duplicate source-session selection is still deliberately conservative: current
-code defaults to the latest matching session per collection and reports warnings
-in the JSON draft.
+When multiple matching source sessions exist for the same source role, the
+non-interactive path defaults to the latest. Use =--interactive-select=, or
+=--ui tui= / =--ui gui=, to choose the intended source session before compiling
+the dry-run draft.
 
 * API Model Layer
 
@@ -360,6 +373,24 @@ common endpoints also have typed helpers such as:
 - =units=
 - =service_events=
 - =service_log_return_to_service_qa=
+
+Workflow code that needs performed QA sessions plus assignment/unit context
+should usually use =radlog.collect.collect_resolved_qa_sessions=. It provides
+date-bounded, ordered collection with metadata caching, optional user/unit
+filtering, and optional collection-name filtering. This keeps example scripts
+from open-coding slow pagination and repeated metadata requests.
+
+When the desired QA assignments are known up front, prefer
+=radlog.collect.collect_unit_test_collections= followed by
+=radlog.collect.collect_resolved_qa_sessions_for_collections=. That avoids a
+broad =qa/testlistinstances= scan and asks RadMachine only for performed
+sessions from the selected assignments.
+
+Workflow code that needs individual performed results by test slug should use
+=radlog.qa_results.numeric_test_value_by_slug= or
+=radlog.qa_results.test_result_by_slug=. These helpers hide the RadMachine
+detail lookup needed to map embedded result row order back to test definition
+slugs.
 
 * Example Draft
 
