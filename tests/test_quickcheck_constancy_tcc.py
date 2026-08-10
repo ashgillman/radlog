@@ -6,10 +6,16 @@ import json
 from unittest.mock import patch
 
 from examples.quickcheck_constancy_tcc import (
+    EnergyDraft,
+    PRACTICE_TARGET_UTC_ID,
+    QuickcheckConstancyDraft,
+    build_submission_payload,
     compile_quickcheck_constancy,
     discover_quickcheck_source_sessions,
     discover_source_sessions,
     main,
+    parse_battery_check,
+    resolve_quickcheck_target_utc_id,
     source_date_range,
     select_latest_source_sessions,
     select_source_sessions_tui,
@@ -130,6 +136,146 @@ def test_compile_quickcheck_constancy_warns_on_multiple_quickchecks() -> None:
     assert "Multiple QuickCheck serials found: 3534 and 9999" in draft.warnings
 
 
+def test_build_submission_payload_uses_practice_assignment_and_source_comment() -> None:
+    draft = QuickcheckConstancyDraft(
+        linac="LAx",
+        quickcheck_serial="3534",
+        work_started="2026-07-07T08:00:00+10:00",
+        work_completed="2026-07-07T12:00:00+10:00",
+        energies={
+            "6 MV": EnergyDraft(
+                energy="6 MV",
+                quickcheck_output=99.87,
+                solid_water_output_deviation=0.1179,
+                quickcheck_session_id="15091",
+                quickcheck_url="https://radmachine.example/demo-customer/qa/session/details/15091/",
+                monthly_session_id="15073",
+                monthly_url="https://radmachine.example/demo-customer/qa/session/details/15073/",
+            ),
+            "6 FFF": EnergyDraft(
+                energy="6 FFF",
+                quickcheck_session_id="15091",
+                quickcheck_url="https://radmachine.example/demo-customer/qa/session/details/15091/",
+            ),
+            "10 MV": EnergyDraft(
+                energy="10 MV",
+                quickcheck_output=100.42,
+                solid_water_output_deviation=0.1369,
+            ),
+        },
+        target_values={
+            "linac_selection": "LAx",
+            "quickcheck_constancy_output_10mv": 100.42,
+            "quickcheck_constancy_solid_water_output_10mv": 0.1369,
+            "quickcheck_constancy_output_6mv": 99.87,
+            "quickcheck_constancy_solid_water_output_6mv": 0.1179,
+            "work_started": "2026-07-07T08:00:00+10:00",
+            "work_completed": "2026-07-07T12:00:00+10:00",
+        },
+    )
+
+    payload = build_submission_payload(draft, battery_check=True)
+
+    assert payload["unit_test_collection"] == PRACTICE_TARGET_UTC_ID
+    assert payload["work_started"] == "2026-07-07T08:00:00+10:00"
+    assert payload["work_completed"] == "2026-07-07T12:00:00+10:00"
+    assert payload["tests"] == {
+        "linac_selection": {"value": "LAx"},
+        "quickcheck_battery_check": {"value": True},
+        "quickcheck_constancy_output_10mev": {"skipped": True},
+        "quickcheck_constancy_output_10mv": {"value": 100.42},
+        "quickcheck_constancy_output_12mev": {"skipped": True},
+        "quickcheck_constancy_output_15mev": {"skipped": True},
+        "quickcheck_constancy_output_6fff": {"skipped": True},
+        "quickcheck_constancy_output_6mev": {"skipped": True},
+        "quickcheck_constancy_output_6mv": {"value": 99.87},
+        "quickcheck_constancy_output_8mev": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_10mev": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_10mv": {"value": 0.1369},
+        "quickcheck_constancy_solid_water_output_12mev": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_15mev": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_6fff": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_6mev": {"skipped": True},
+        "quickcheck_constancy_solid_water_output_6mv": {"value": 0.1179},
+        "quickcheck_constancy_solid_water_output_8mev": {"skipped": True},
+    }
+    assert "quickcheck_constancy_output_difference_6_mv_fff" not in payload["tests"]
+    assert "2026-07-07T08:00:00+10:00" not in payload["tests"]
+    assert "QuickCheck serial: 3534" in payload["comment"]
+    assert "https://radmachine.example/demo-customer/qa/session/details/15091/" in payload["comment"]
+
+
+def test_build_submission_payload_rejects_mixed_quickcheck_serials() -> None:
+    draft = QuickcheckConstancyDraft(
+        linac="LAx",
+        quickcheck_serial="3534",
+        work_started="2026-07-07T08:00:00+10:00",
+        work_completed="2026-07-07T12:00:00+10:00",
+        energies={
+            "6 MV": EnergyDraft("6 MV", quickcheck_output=99.87, solid_water_output_deviation=0.1179),
+            "10 MV": EnergyDraft("10 MV", quickcheck_output=100.42, solid_water_output_deviation=0.1369),
+        },
+        target_values={
+            "quickcheck_constancy_output_6mv": 99.87,
+            "quickcheck_constancy_solid_water_output_6mv": 0.1179,
+            "quickcheck_constancy_output_10mv": 100.42,
+            "quickcheck_constancy_solid_water_output_10mv": 0.1369,
+        },
+        warnings=["Multiple QuickCheck serials found: 3534 and 9999"],
+    )
+
+    try:
+        build_submission_payload(draft)
+    except ValueError as exc:
+        assert "Multiple QuickCheck serials found" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_parse_battery_check_accepts_expected_aliases() -> None:
+    assert parse_battery_check("good") is True
+    assert parse_battery_check("true") is True
+    assert parse_battery_check("1") is True
+    assert parse_battery_check("bad") is False
+    assert parse_battery_check("false") is False
+    assert parse_battery_check("0") is False
+
+
+def test_build_submission_payload_rejects_missing_required_photon_values() -> None:
+    draft = QuickcheckConstancyDraft(
+        linac="LAx",
+        quickcheck_serial="3534",
+        work_started="2026-07-07T08:00:00+10:00",
+        work_completed="2026-07-07T12:00:00+10:00",
+        energies={"6 MV": EnergyDraft("6 MV", quickcheck_output=99.87, solid_water_output_deviation=0.1179)},
+        target_values={"quickcheck_constancy_output_6mv": 99.87},
+    )
+
+    try:
+        build_submission_payload(draft)
+    except ValueError as exc:
+        assert "Missing required QuickCheck output for 10 MV" in str(exc)
+        assert "Missing required monthly solid-water output deviation for 10 MV" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_resolve_quickcheck_target_utc_id_uses_serial_unit_and_test_list_name(monkeypatch) -> None:
+    calls = []
+
+    def fake_collect(_client, **kwargs):
+        calls.append(kwargs)
+        return [UnitTestCollection.from_api({"url": "https://radmachine.example/api/qa/unittestcollections/321/"})]
+
+    monkeypatch.setattr("examples.quickcheck_constancy_tcc.collect_unit_test_collections", fake_collect)
+    draft = QuickcheckConstancyDraft(linac="LAx", quickcheck_serial="3534")
+
+    assert resolve_quickcheck_target_utc_id(object(), draft) == 321
+    assert calls[0]["unit"] == "PTW Quickcheck: 3534"
+    assert calls[0]["collection_name_matches"]("Quickcheck Constancy")
+    assert not calls[0]["collection_name_matches"]("Daily QuickCheck")
+
+
 def test_source_selections_preserve_duplicates_latest_first() -> None:
     old = _session("1", "Quickcheck Photons", "LAx - LinacName", [], performed_at="2026-07-07T10:00:00+10:00")
     new = _session("2", "Quickcheck Photons", "LAx - LinacName", [], performed_at="2026-07-07T11:00:00+10:00")
@@ -231,21 +377,75 @@ def test_discover_quickcheck_source_sessions_attaches_test_slugs(monkeypatch) ->
 
 
 def test_main_uses_default_config_discovery_when_config_not_provided(capsys) -> None:
+    draft = QuickcheckConstancyDraft(
+        linac="LAx",
+        quickcheck_serial="3534",
+        work_started="2026-07-07T08:00:00+10:00",
+        work_completed="2026-07-07T12:00:00+10:00",
+        energies={
+            "6 MV": EnergyDraft("6 MV", quickcheck_output=99.87, solid_water_output_deviation=0.1179),
+            "10 MV": EnergyDraft("10 MV", quickcheck_output=100.42, solid_water_output_deviation=0.1369),
+        },
+        target_values={
+            "quickcheck_constancy_output_6mv": 99.87,
+            "quickcheck_constancy_solid_water_output_6mv": 0.1179,
+            "quickcheck_constancy_output_10mv": 100.42,
+            "quickcheck_constancy_solid_water_output_10mv": 0.1369,
+        },
+    )
     with (
         patch("examples.quickcheck_constancy_tcc.resolve_config_path", return_value="resolved-config.toml") as resolve,
         patch("examples.quickcheck_constancy_tcc.load_config", return_value=object()) as load,
         patch("examples.quickcheck_constancy_tcc.RadMachineClient"),
         patch("examples.quickcheck_constancy_tcc.load_sessions_by_ids", return_value=[]),
-        patch("examples.quickcheck_constancy_tcc.compile_quickcheck_constancy") as compile_,
+        patch("examples.quickcheck_constancy_tcc.compile_quickcheck_constancy", return_value=draft),
     ):
-        compile_.return_value.to_jsonable.return_value = {"dry_run": True}
-
         exit_code = main(["--session-id", "15091"])
 
     assert exit_code == 0
     resolve.assert_called_once_with(None)
     load.assert_called_once_with("resolved-config.toml")
-    assert json.loads(capsys.readouterr().out) == {"dry_run": True}
+    output = json.loads(capsys.readouterr().out)
+    assert output["mode"] == "dry-run"
+    assert output["payload"]["unit_test_collection"] == PRACTICE_TARGET_UTC_ID
+    assert output["payload"]["tests"]["quickcheck_battery_check"] == {"skipped": True}
+    assert output["payload"]["tests"]["quickcheck_constancy_output_6mv"] == {"value": 99.87}
+    assert output["payload"]["tests"]["quickcheck_constancy_output_10mv"] == {"value": 100.42}
+
+
+def test_main_practice_run_uploads_to_practice_assignment(capsys) -> None:
+    draft = QuickcheckConstancyDraft(
+        linac="LAx",
+        quickcheck_serial="3534",
+        work_started="2026-07-07T08:00:00+10:00",
+        work_completed="2026-07-07T12:00:00+10:00",
+        energies={
+            "6 MV": EnergyDraft("6 MV", quickcheck_output=99.87, solid_water_output_deviation=0.1179),
+            "10 MV": EnergyDraft("10 MV", quickcheck_output=100.42, solid_water_output_deviation=0.1369),
+        },
+        target_values={
+            "quickcheck_constancy_output_6mv": 99.87,
+            "quickcheck_constancy_solid_water_output_6mv": 0.1179,
+            "quickcheck_constancy_output_10mv": 100.42,
+            "quickcheck_constancy_solid_water_output_10mv": 0.1369,
+        },
+    )
+    client = object()
+    with (
+        patch("examples.quickcheck_constancy_tcc.resolve_config_path", return_value="resolved-config.toml"),
+        patch("examples.quickcheck_constancy_tcc.load_config", return_value=object()),
+        patch("examples.quickcheck_constancy_tcc.RadMachineClient", return_value=client),
+        patch("examples.quickcheck_constancy_tcc.load_sessions_by_ids", return_value=[]),
+        patch("examples.quickcheck_constancy_tcc.compile_quickcheck_constancy", return_value=draft),
+        patch("examples.quickcheck_constancy_tcc.submit_practice_qa", return_value={"url": "created"}) as submit,
+    ):
+        exit_code = main(["--session-id", "15091", "--practice-run", "--battery-check", "good"])
+
+    assert exit_code == 0
+    submit.assert_called_once_with(client, draft, battery_check=True)
+    output = json.loads(capsys.readouterr().out)
+    assert output["mode"] == "practice-run"
+    assert output["response"] == {"url": "created"}
 
 
 def test_source_date_range_accepts_standard_relative_windows() -> None:

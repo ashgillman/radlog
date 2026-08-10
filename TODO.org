@@ -13,7 +13,6 @@
 - [ ] Define validation / parsing layer for raw payloads
 
 * TODO General RadMachine interface
-- [ ] Define safe write/create helpers for test entries behind explicit CLI flags
 - [ ] Add examples for pulling third-party data into candidate test entries
 
 * TODO Classification

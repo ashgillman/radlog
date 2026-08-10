@@ -307,18 +307,18 @@ of the reusable radlog library.
 Current examples:
 
 - =examples/quickcheck_constancy_tcc.py=
-  - dry-run compiler for a TCC Monthly QuickCheck QA composite test
+  - compiler for a TCC Monthly QuickCheck QA composite test
   - reads existing monthly dosimetry and QuickCheck sessions
   - extracts QuickCheck serial, CAX output, and monthly output-deviation values
-  - emits a JSON draft keyed by target Monthly QuickCheck QA test slugs
-  - does not upload, submit, create, patch, or otherwise mutate RadMachine data
+  - emits a JSON submission payload keyed by target Monthly QuickCheck QA test slugs
+  - only mutates RadMachine when explicitly called with =--practice-run= or =--upload=
 
-Dry-run with the known example sessions:
+Dry-run by explicit source session IDs:
 
 #+begin_src sh
 python -m examples.quickcheck_constancy_tcc \
-  --config config.toml \
-  --default-example-sessions
+  --session-id 15091 \
+  --session-id 15093
 #+end_src
 
 Dry-run by linac/date:
@@ -346,7 +346,16 @@ The example has =--ui tui= and =--ui gui= entry points for linac/date input.
 When multiple matching source sessions exist for the same source role, the
 non-interactive path defaults to the latest. Use =--interactive-select=, or
 =--ui tui= / =--ui gui=, to choose the intended source session before compiling
-the dry-run draft.
+the dry-run payload.
+
+Run modes:
+
+- =--dry-run=, the default, prints the payload and source draft without uploading
+- =--practice-run= uploads to the =TEST LINAC= practice UnitTestCollection
+- =--upload= resolves the real QuickCheck UnitTestCollection from the detected serial number and uploads there
+
+In RadMachine/QATrack terminology, a UnitTestCollection is an assignment of a
+test list to a unit. It is not a UTC time value.
 
 * API Model Layer
 

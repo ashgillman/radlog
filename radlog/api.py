@@ -48,7 +48,13 @@ class RadMachineClient:
     def get_json(self, endpoint: str = "", params: dict[str, str] | None = None) -> dict | list:
         url = self._build_url(endpoint)
         response = self._session.get(url, params=params, timeout=30)
-        response.raise_for_status()
+        _raise_for_status_with_body(response)
+        return response.json()
+
+    def post_json(self, endpoint: str, payload: dict) -> dict | list:
+        url = self._build_url(endpoint)
+        response = self._session.post(url, json=payload, timeout=30)
+        _raise_for_status_with_body(response)
         return response.json()
 
     def paginate(self, endpoint: str, params: dict[str, str] | None = None) -> Iterator[dict]:
@@ -57,7 +63,7 @@ class RadMachineClient:
 
         while next_url:
             response = self._session.get(next_url, params=next_params, timeout=30)
-            response.raise_for_status()
+            _raise_for_status_with_body(response)
             payload = response.json()
 
             if not isinstance(payload, dict) or "results" not in payload:
@@ -109,6 +115,37 @@ class RadMachineClient:
         """Fetch one unit by API URL or endpoint."""
         return Unit.from_api(self._get_object(endpoint))
 
+    def perform_qa_session(
+        self,
+        *,
+        unit_test_collection: str | int,
+        work_started: str,
+        work_completed: str,
+        tests: dict[str, dict],
+        comment: str | None = None,
+    ) -> dict:
+        """Create a performed QA session.
+
+        `unit_test_collection` may be an assignment ID or an API URL.
+        """
+        assignment_url = (
+            f"{self.api_root_url}qa/unittestcollections/{unit_test_collection}/"
+            if isinstance(unit_test_collection, int) or str(unit_test_collection).isdigit()
+            else self._build_url(str(unit_test_collection))
+        )
+        payload = {
+            "unit_test_collection": assignment_url,
+            "work_started": work_started,
+            "work_completed": work_completed,
+            "tests": tests,
+        }
+        if comment:
+            payload["comment"] = comment
+        response = self.post_json("qa/testlistinstances/", payload)
+        if not isinstance(response, dict):
+            raise ValueError("Expected performed QA response object")
+        return response
+
     def _typed_paginate(
         self,
         endpoint: str,
@@ -134,3 +171,21 @@ class RadMachineClient:
         if cleaned.startswith(f"{self._config.radmachine.customer_id}/api/"):
             return urljoin(self._config.radmachine.base_url.rstrip("/") + "/", cleaned)
         return urljoin(self.api_root_url, cleaned)
+
+
+def _raise_for_status_with_body(response: requests.Response) -> None:
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = _response_error_detail(response)
+        if detail:
+            raise requests.HTTPError(f"{exc}; response body: {detail}", response=response) from exc
+        raise
+
+
+def _response_error_detail(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return response.text.strip()
+    return str(payload)
