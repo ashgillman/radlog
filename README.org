@@ -457,6 +457,32 @@ The user cache path is normally =~/.cache/radlog= on macOS/Linux or
 =%LOCALAPPDATA%\radlog\cache= on Windows. Future local metadata caches should
 use that location rather than repository-local files.
 
+** Using the provided example extensions
+
+The repository includes example extension modules under =examples/=. For
+example, =examples/render_ag_org.py= provides the =render_candidate= logbook
+renderer. To use it from the normal user configuration, add the directory
+containing the module to =[extensions] paths= and select the callable under
+=[render]=:
+
+#+begin_src toml
+[extensions]
+paths = ["~/src/radlog/examples"]
+
+[render]
+logbook_org_renderer = "render_ag_org:render_candidate"
+#+end_src
+
+Adjust the search path to match the location of the repository checkout.
+Home-relative paths beginning with =~= are expanded automatically. A stable
+home-relative or absolute path is preferable to ="./examples"= because a
+relative extension path is resolved from the CLI process's working directory,
+which can vary when radlog is invoked from Emacs or another application.
+
+Extension callables use the =MODULE:ATTRIBUTE= form. The module filename above
+is therefore =render_ag_org.py= and the callable defined in it is
+=render_candidate=.
+
 * Sample Payloads
 
 Representative redacted payload examples live in:
