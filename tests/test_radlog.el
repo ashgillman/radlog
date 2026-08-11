@@ -1,6 +1,19 @@
 (require 'ert)
 (require 'cl-lib)
-(load-file "/Users/gil/src/radmachine-to-logbook/elisp/radlog.el")
+
+(defconst radlog-test-project-root
+  (file-name-directory
+   (directory-file-name
+    (file-name-directory (or load-file-name buffer-file-name)))))
+
+(load-file (expand-file-name "elisp/radlog.el" radlog-test-project-root))
+
+(ert-deftest radlog-project-root-is-independent-of-default-directory ()
+  (let ((default-directory temporary-file-directory))
+    (should
+     (equal
+      (file-truename (radlog--project-root))
+      (file-truename radlog-test-project-root)))))
 
 (ert-deftest radlog-resolve-destination-uses-entry-type-route ()
   (let ((radlog-destination-map '(("linac_mqc" :file "/tmp/logbook.org" :id "abc123"))))

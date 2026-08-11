@@ -10,14 +10,13 @@
 (require 'seq)
 (require 'subr-x)
 
+(defconst radlog--library-file
+  (or load-file-name buffer-file-name)
+  "File from which the radlog library was loaded.")
+
 (defcustom radlog-python-command "python"
   "Python executable used to invoke the radlog CLI."
   :type 'string
-  :group 'radlog)
-
-(defcustom radlog-config-file "config.toml"
-  "Config file passed to the radlog CLI."
-  :type 'file
   :group 'radlog)
 
 (defcustom radlog-default-user nil
@@ -133,7 +132,6 @@ review accept/skip/defer flows."
   "Run the radlog CLI for START, END, and USER and return parsed JSON."
   (let* ((default-directory (radlog--project-root))
          (args (list "-m" "radlog.cli"
-                     "--config" (expand-file-name radlog-config-file default-directory)
                      "--collect" "qa-candidates"
                      "--start" start
                      "--end" end
@@ -347,8 +345,13 @@ Return a cons cell of (FILE . ID)."
   (org-read-date nil nil nil prompt nil nil nil))
 
 (defun radlog--project-root ()
-  "Return the current radlog project root."
-  (or (locate-dominating-file default-directory radlog-config-file)
+  "Return the radlog source checkout containing the Python package."
+  (or (and radlog--library-file
+           (locate-dominating-file
+            (file-name-directory radlog--library-file)
+            (lambda (directory)
+              (file-exists-p
+               (expand-file-name "radlog/cli.py" directory)))))
       default-directory))
 
 (provide 'radlog)
