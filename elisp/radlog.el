@@ -67,17 +67,24 @@ review accept/skip/defer/quit flows."
 (defvar-local radlog--draft-start-marker nil)
 (defvar-local radlog--draft-end-marker nil)
 
-(define-derived-mode radlog-review-mode org-mode "Radlog-Review"
-  "Major mode for reviewing imported RadMachine entries."
-  (setq-local header-line-format
-              (format "radlog review %d/%d: C-c C-c keep  C-c C-k remove  C-c C-d defer (come back later)  C-c C-q quit task"
-                      radlog--current-candidate-index
-                      radlog--total-candidates)))
+(defvar radlog-review-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'radlog-review-accept)
+    (define-key map (kbd "C-c C-k") #'radlog-review-skip)
+    (define-key map (kbd "C-c C-d") #'radlog-review-defer)
+    (define-key map (kbd "C-c C-q") #'radlog-review-quit)
+    map)
+  "Keymap active while reviewing a radlog draft.")
 
-(define-key radlog-review-mode-map (kbd "C-c C-c") #'radlog-review-accept)
-(define-key radlog-review-mode-map (kbd "C-c C-k") #'radlog-review-skip)
-(define-key radlog-review-mode-map (kbd "C-c C-d") #'radlog-review-defer)
-(define-key radlog-review-mode-map (kbd "C-c C-q") #'radlog-review-quit)
+(define-minor-mode radlog-review-mode
+  "Minor mode for reviewing imported RadMachine entries in an Org buffer."
+  :lighter " Radlog-Review"
+  :keymap radlog-review-mode-map
+  (setq-local header-line-format
+              (when radlog-review-mode
+                (format "radlog review %d/%d: C-c C-c keep  C-c C-k remove  C-c C-d defer (come back later)  C-c C-q quit task"
+                        radlog--current-candidate-index
+                        radlog--total-candidates))))
 
 ;;;###autoload
 (defun radlog-import-radmachine (start end user)
@@ -211,7 +218,7 @@ review accept/skip/defer/quit flows."
             (unless (string-suffix-p "\n" text)
               (insert "\n"))
             (setq end (point)))
-          (radlog-review-mode)
+          (radlog-review-mode 1)
           (setq-local radlog--current-candidate candidate)
           (setq-local radlog--target-file target-file)
           (setq-local radlog--target-id target-id)
@@ -307,7 +314,7 @@ If `radlog-save-with-hooks' is nil, save without running save hooks."
 (defun radlog--clear-review-state ()
   "Restore the current buffer after an in-place radlog review step."
   (widen)
-  (setq header-line-format nil)
+  (radlog-review-mode -1)
   (setq-local radlog--current-candidate nil)
   (setq-local radlog--target-file nil)
   (setq-local radlog--target-id nil)
@@ -316,8 +323,7 @@ If `radlog-save-with-hooks' is nil, save without running save hooks."
   (when radlog--draft-end-marker
     (set-marker radlog--draft-end-marker nil))
   (setq-local radlog--draft-start-marker nil)
-  (setq-local radlog--draft-end-marker nil)
-  (org-mode))
+  (setq-local radlog--draft-end-marker nil))
 
 (defun radlog--resolve-destination (candidate fallback-file)
   "Resolve insertion destination for CANDIDATE.
@@ -341,10 +347,14 @@ Return a cons cell of (FILE . ID)."
        entry-type)))))
 
 (defun radlog--goto-id (id)
-  "Move point to the Org heading identified by ID."
-  (let ((location (org-id-find id t)))
+  "Move to the Org heading identified by ID in the current buffer."
+  (let ((location (save-restriction
+                    (widen)
+                    (org-find-entry-with-id id))))
     (unless location
-      (user-error "radlog could not find Org ID %s" id))
+      (user-error "radlog could not find Org ID %s in %s"
+                  id
+                  (or buffer-file-name (buffer-name))))
     (goto-char location)
     (org-back-to-heading t)))
 

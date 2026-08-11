@@ -47,6 +47,25 @@
       (should (= radlog--current-candidate-index 0))
       (should (null radlog--current-candidate)))))
 
+(ert-deftest radlog-review-state-does-not-rerun-org-mode-hooks ()
+  (with-temp-buffer
+    (org-mode)
+    (let ((hook-runs 0)
+          (org-mode-hook (list (lambda () (setq hook-runs (1+ hook-runs))))))
+      (radlog-review-mode 1)
+      (radlog--clear-review-state)
+      (should (= hook-runs 0)))))
+
+(ert-deftest radlog-goto-id-searches-only-the-current-target-buffer ()
+  (with-temp-buffer
+    (org-mode)
+    (insert "* Target\n:PROPERTIES:\n:ID: local-id\n:END:\n")
+    (cl-letf (((symbol-function 'org-id-find)
+               (lambda (&rest _)
+                 (ert-fail "global org-id-find should not be called"))))
+      (radlog--goto-id "local-id"))
+    (should (looking-at-p "\\* Target"))))
+
 (ert-deftest radlog-resolve-destination-uses-entry-type-route ()
   (let ((radlog-destination-map '(("linac_mqc" :file "/tmp/logbook.org" :id "abc123"))))
     (should
