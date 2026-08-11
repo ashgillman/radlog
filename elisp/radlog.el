@@ -52,7 +52,7 @@ for candidates whose specific `entry_type' is not mapped."
 
 When nil, radlog saves with `before-save-hook' and `after-save-hook'
 temporarily disabled. This avoids expensive or blocking hook chains during
-review accept/skip/defer flows."
+review accept/skip/defer/quit flows."
   :type 'boolean
   :group 'radlog)
 
@@ -70,13 +70,14 @@ review accept/skip/defer flows."
 (define-derived-mode radlog-review-mode org-mode "Radlog-Review"
   "Major mode for reviewing imported RadMachine entries."
   (setq-local header-line-format
-              (format "radlog review %d/%d: C-c C-c keep  C-c C-k remove  C-c C-d defer"
+              (format "radlog review %d/%d: C-c C-c keep  C-c C-k remove  C-c C-d defer (come back later)  C-c C-q quit task"
                       radlog--current-candidate-index
                       radlog--total-candidates)))
 
 (define-key radlog-review-mode-map (kbd "C-c C-c") #'radlog-review-accept)
 (define-key radlog-review-mode-map (kbd "C-c C-k") #'radlog-review-skip)
 (define-key radlog-review-mode-map (kbd "C-c C-d") #'radlog-review-defer)
+(define-key radlog-review-mode-map (kbd "C-c C-q") #'radlog-review-quit)
 
 ;;;###autoload
 (defun radlog-import-radmachine (start end user)
@@ -120,13 +121,33 @@ review accept/skip/defer flows."
   (radlog--advance-review "Skipped" (current-buffer) radlog--target-file))
 
 (defun radlog-review-defer ()
-  "Remove the current in-place draft and defer the candidate for later."
+  "Remove the current draft and return to the candidate after this pass."
   (interactive)
   (unless radlog--current-candidate
     (user-error "No current radlog candidate"))
   (push radlog--current-candidate radlog--deferred-candidates)
   (radlog--remove-current-draft)
   (radlog--advance-review "Deferred" (current-buffer) radlog--target-file))
+
+(defun radlog-review-quit ()
+  "Quit the current import task and discard its unreviewed candidates."
+  (interactive)
+  (unless radlog--current-candidate
+    (user-error "No current radlog candidate"))
+  (let ((remaining (+ 1
+                      (length radlog--candidate-queue)
+                      (length radlog--deferred-candidates))))
+    (when (y-or-n-p
+           (format "Quit radlog task and discard %d unreviewed candidate%s? "
+                   remaining
+                   (if (= remaining 1) "" "s")))
+      (radlog--remove-current-draft)
+      (setq radlog--candidate-queue nil
+            radlog--deferred-candidates nil
+            radlog--total-candidates 0
+            radlog--current-candidate-index 0)
+      (radlog--clear-review-state)
+      (message "radlog: task quit"))))
 
 (defun radlog--run-cli (start end user)
   "Run the radlog CLI for START, END, and USER and return parsed JSON."
@@ -155,7 +176,7 @@ review accept/skip/defer flows."
 
 (defun radlog--show-next-candidate (fallback-file)
   "Insert the next candidate into its target Org buffer for in-place review."
-  (if-let* ((candidate (pop radlog--candidate-queue))
+  (if-let* ((candidate (radlog--pop-next-candidate))
             (destination (radlog--resolve-destination candidate fallback-file))
             (target-file (car destination))
             (target-id (cdr destination))
@@ -199,8 +220,18 @@ review accept/skip/defer flows."
           (narrow-to-region start end)
           (goto-char (point-min))
           (pop-to-buffer buffer)
-          (message "radlog: C-c C-c keep, C-c C-k remove, C-c C-d defer")))
-    (message "radlog complete: %d deferred" (length radlog--deferred-candidates))))
+          (message "radlog: C-c C-c keep, C-c C-k remove, C-c C-d defer (come back later), C-c C-q quit task")))
+    (message "radlog complete")))
+
+(defun radlog--pop-next-candidate ()
+  "Return the next candidate, starting another pass over deferred items."
+  (when (and (null radlog--candidate-queue)
+             radlog--deferred-candidates)
+    (setq radlog--candidate-queue (nreverse radlog--deferred-candidates)
+          radlog--deferred-candidates nil
+          radlog--total-candidates (length radlog--candidate-queue)
+          radlog--current-candidate-index 0))
+  (pop radlog--candidate-queue))
 
 (defun radlog--advance-review (action review-buffer fallback-file)
   "Advance to the next candidate after ACTION.

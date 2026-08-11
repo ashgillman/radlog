@@ -427,6 +427,18 @@ This is intentionally still a draft. The grouping and rendering need more work,
 but the basic end-to-end path from live API data to draft Org text is now in
 place.
 
+* Emacs Review Controls
+
+During in-place review, the available actions are:
+
+- =C-c C-c= Keep the current draft and continue.
+- =C-c C-k= Remove the current draft and skip it.
+- =C-c C-d= Defer (come back later). The draft is removed for now and returned
+  to after the current pass through the remaining candidates.
+- =C-c C-q= Quit Task. After confirmation, the current draft is removed and all
+  remaining and deferred candidates are discarded. Entries already kept are
+  not removed.
+
 * Configuration
 
 Expected local setup:

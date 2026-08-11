@@ -40,7 +40,6 @@
 * TODO CLI
 * TODO Emacs integration
 - [ ] Prompt for unit when doing MQA-only imports to reduce slow broad fetches
-- [ ] Replace the separate review buffer with in-place draft review in the target Org file
 - [ ] Confirm duplicate override prompt reliably appears from in-place review
 - [ ] Preserve point and window sanely
 
