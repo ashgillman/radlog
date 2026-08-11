@@ -95,13 +95,42 @@ def render_service_ad_hoc(entry: CandidateEntry) -> str:
                 lines.append("")
                 lines.extend(_render_indented_paragraph(prompt))
 
-    return_to_service_qa = entry.metadata.get("return_to_service_qa", [])
-    if isinstance(return_to_service_qa, list) and return_to_service_qa:
-        lines.append("- Return To Service QA ::")
-        for qa_name in return_to_service_qa:
-            lines.append(f"  - {qa_name}")
+    return_to_service = entry.metadata.get("return_to_service", [])
+    if isinstance(return_to_service, list):
+        lines.extend(_render_return_to_service(return_to_service))
 
     return "\n".join(lines)
+
+
+def _render_return_to_service(sessions: list[object]) -> list[str]:
+    valid_sessions = [session for session in sessions if isinstance(session, dict)]
+    if not valid_sessions:
+        return []
+    if len(valid_sessions) == 1:
+        session = valid_sessions[0]
+        groups = _return_to_service_groups(session)
+        suffix = f"  ({', '.join(f'={group}=' for group in groups)})" if groups else ""
+        return [f"- Return to service :: {_return_to_service_link(session)}{suffix}"]
+
+    lines = ["- Return to service ::"]
+    for session in valid_sessions:
+        lines.append(f"  - {_return_to_service_link(session)}")
+        for group in _return_to_service_groups(session):
+            lines.append(f"    - ={group}=")
+    return lines
+
+
+def _return_to_service_link(session: dict) -> str:
+    label = str(session.get("label") or "Return to Service QA").strip()
+    url = str(session.get("session_url") or "").strip()
+    return f"[[{url}][{label}]]" if url else label
+
+
+def _return_to_service_groups(session: dict) -> list[str]:
+    groups = session.get("qa_groups", [])
+    if not isinstance(groups, list):
+        return []
+    return [str(group).strip() for group in groups if str(group).strip()]
 
 
 def _partition_post_pmi_items(entry: CandidateEntry) -> tuple[list[PerformedItem], list[PerformedItem], list[PerformedItem]]:

@@ -182,7 +182,16 @@ def test_render_abc_ad_hoc_org_text() -> None:
         source_ids=["service:324"],
         metadata={
             "url": "https://radmachine.example/demo-customer/servicelog/event/details/324/",
-            "return_to_service_qa": ["ABC Weekly QC"],
+            "return_to_service": [
+                {
+                    "label": "ABC Weekly QA",
+                    "session_url": "https://radmachine.example/demo-customer/qa/session/review/14396/",
+                    "qa_groups": [
+                        "ABC Weekly :: Visual Inspection",
+                        "ABC Weekly :: Spirometry",
+                    ],
+                }
+            ],
         },
     )
 
@@ -195,8 +204,41 @@ def test_render_abc_ad_hoc_org_text() -> None:
     assert "- Problem Description :: Balloon Tests 3B and 4B have been failing. These are not impacting on clinical performance, but may indicate balloon wear and tear." in rendered
     assert "- Work description :: Elekta replaced the balloon valve." in rendered
     assert "  Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing." in rendered
-    assert "- Return To Service QA ::" in rendered
-    assert "  - ABC Weekly QC" in rendered
+    assert "- Return to service :: [[https://radmachine.example/demo-customer/qa/session/review/14396/][ABC Weekly QA]]  (=ABC Weekly :: Visual Inspection=, =ABC Weekly :: Spirometry=)" in rendered
+
+
+def test_render_service_ad_hoc_lists_multiple_return_to_service_sessions() -> None:
+    entry = CandidateEntry(
+        entry_type="abc_ad_hoc",
+        group_key="2026-05-25_ABC_abc_ad_hoc",
+        date="2026-05-25",
+        title="ABC Ad hoc QA",
+        tags=["ABC3"],
+        metadata={
+            "return_to_service": [
+                {
+                    "label": "ABC Weekly QA",
+                    "session_url": "https://radmachine.example/demo-customer/qa/session/review/14396/",
+                    "qa_groups": ["ABC Weekly :: Visual Inspection", "ABC Weekly :: Spirometry"],
+                },
+                {
+                    "label": "ABC Daily QA",
+                    "session_url": "https://radmachine.example/demo-customer/qa/session/review/14397/",
+                    "qa_groups": ["ABC Daily :: Run-up"],
+                },
+            ]
+        },
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "- Return to service ::" in rendered
+    assert "  - [[https://radmachine.example/demo-customer/qa/session/review/14396/][ABC Weekly QA]]" in rendered
+    assert "    - =ABC Weekly :: Visual Inspection=" in rendered
+    assert "    - =ABC Weekly :: Spirometry=" in rendered
+    assert "  - [[https://radmachine.example/demo-customer/qa/session/review/14397/][ABC Daily QA]]" in rendered
+    assert "    - =ABC Daily :: Run-up=" in rendered
+    assert "(=" not in rendered
 
 
 def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> None:

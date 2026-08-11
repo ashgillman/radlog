@@ -183,7 +183,13 @@ def test_group_source_records_routes_abc_service_events_to_abc_ad_hoc() -> None:
                 "work_description": "Elekta replaced the balloon valve.\n\nPerformed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing.",
                 "service_type_name": "Repair",
                 "event_url": "https://radmachine.example/demo-customer/servicelog/event/details/324/",
-                "return_to_service_qa": ["ABC Weekly QC"],
+                "return_to_service": [
+                    {
+                        "label": "ABC Weekly QA",
+                        "session_url": "https://radmachine.example/demo-customer/qa/session/review/14396/",
+                        "qa_groups": ["ABC Weekly :: Visual Inspection", "ABC Weekly :: Spirometry"],
+                    }
+                ],
             }
         },
     )
@@ -205,7 +211,13 @@ def test_group_source_records_routes_abc_service_events_to_abc_ad_hoc() -> None:
         "Performed Weekly as RTS, as well as RT daily runup. Unit continues to fail balloon tests 3B and 4B. Likely failing to seal balloon assembly against housing."
     ]
     assert entry.metadata["url"] == "https://radmachine.example/demo-customer/servicelog/event/details/324/"
-    assert entry.metadata["return_to_service_qa"] == ["ABC Weekly QC"]
+    assert entry.metadata["return_to_service"] == [
+        {
+            "label": "ABC Weekly QA",
+            "session_url": "https://radmachine.example/demo-customer/qa/session/review/14396/",
+            "qa_groups": ["ABC Weekly :: Visual Inspection", "ABC Weekly :: Spirometry"],
+        }
+    ]
 
 
 def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -> None:

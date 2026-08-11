@@ -366,6 +366,15 @@ class ServiceEventClient:
                 "user_created_by": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/auth/users/27/",
             }
             return
+        if endpoint == "servicelog/returntoserviceqa":
+            for remote_id, collection_id in ((854, 427), (855, 428)):
+                yield {
+                    "url": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/returntoserviceqa/{remote_id}/",
+                    "service_event": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/serviceevents/324/",
+                    "unit_test_collection": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/{collection_id}/",
+                    "test_list_instance": f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/testlistinstances/14396/",
+                }
+            return
         raise AssertionError(endpoint)
 
     def get_json(self, endpoint: str, params: dict[str, str] | None = None):
@@ -380,6 +389,10 @@ class ServiceEventClient:
             return {"name": "Repair"}
         if endpoint.endswith("/1/"):
             return {"name": "Submitted"}
+        if endpoint.endswith("/427/"):
+            return {"name": "ABC Weekly :: Visual Inspection"}
+        if endpoint.endswith("/428/"):
+            return {"name": "ABC Weekly :: Spirometry"}
         raise AssertionError(endpoint)
 
 
@@ -406,8 +419,18 @@ def test_collect_service_events_normalizes_service_records() -> None:
     assert service_event["service_type_name"] == "Repair"
     assert service_event["service_status_name"] == "Submitted"
     assert service_event["event_url"] == "https://radmachine.example/demo-customer/servicelog/event/details/324/"
+    assert service_event["return_to_service"] == [
+        {
+            "label": "ABC Weekly QA",
+            "session_url": "https://radmachine.example/demo-customer/qa/session/review/14396/",
+            "qa_groups": ["ABC Weekly :: Visual Inspection", "ABC Weekly :: Spirometry"],
+        }
+    ]
     assert client.calls == [
         ("servicelog/serviceevents", {"limit": "100", "ordering": "-datetime_service"}),
+        ("servicelog/returntoserviceqa", {"limit": "100"}),
+        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/427/", None),
+        (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/qa/unittestcollections/428/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/unitserviceareas/61/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/units/units/39/", None),
         (f"{TEST_BASE_URL}/{TEST_CUSTOMER_ID}/api/servicelog/servicetypes/2/", None),

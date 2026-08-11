@@ -529,21 +529,38 @@ def _service_event_detail_prompts(records: list[SourceRecord]) -> list[str]:
 
 
 def _service_event_metadata(records: list[SourceRecord]) -> dict[str, object]:
-    return_to_service_qa: list[str] = []
+    return_to_service_by_url: dict[str, dict[str, object]] = {}
 
     for record in records:
         service_event = record.raw.get("service_event", {})
         if not isinstance(service_event, dict):
             continue
 
-        for qa_name in service_event.get("return_to_service_qa", []):
-            normalized = str(qa_name).strip()
-            if normalized and normalized not in return_to_service_qa:
-                return_to_service_qa.append(normalized)
+        for qa_session in service_event.get("return_to_service", []):
+            if not isinstance(qa_session, dict):
+                continue
+            session_url = str(qa_session.get("session_url", "")).strip()
+            if not session_url:
+                continue
+            stored = return_to_service_by_url.setdefault(
+                session_url,
+                {
+                    "label": str(qa_session.get("label") or "Return to Service QA").strip(),
+                    "session_url": session_url,
+                    "qa_groups": [],
+                },
+            )
+            groups = stored["qa_groups"]
+            if not isinstance(groups, list):
+                continue
+            for qa_group in qa_session.get("qa_groups", []):
+                normalized = str(qa_group).strip()
+                if normalized and normalized not in groups:
+                    groups.append(normalized)
 
     metadata: dict[str, object] = {}
-    if return_to_service_qa:
-        metadata["return_to_service_qa"] = return_to_service_qa
+    if return_to_service_by_url:
+        metadata["return_to_service"] = list(return_to_service_by_url.values())
     return metadata
 
 

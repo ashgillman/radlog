@@ -269,6 +269,12 @@ def collect_service_events(
 
         selected_events.append(service_event)
 
+    return_to_service_by_event = _collect_return_to_service_by_event(
+        client,
+        selected_events,
+        cache,
+    )
+
     for service_event in selected_events:
         unit_service_area = _fetch_json(client, cache, service_event.unit_service_area)
         unit = Unit.from_api(_fetch_json(client, cache, unit_service_area.get("unit")) if unit_service_area else {})
@@ -295,6 +301,7 @@ def collect_service_events(
                         "event_url": _service_event_url(service_event.url),
                         "service_type_name": service_type.get("name"),
                         "service_status_name": service_status.get("name"),
+                        "return_to_service": return_to_service_by_event.get(service_event.url, []),
                     },
                     "unit_service_area": unit_service_area,
                     "unit": unit,
@@ -354,3 +361,69 @@ def _service_event_url(api_url: str | None) -> str | None:
         return None
     prefix, _ = api_url.split(marker, 1)
     return f"{prefix}/servicelog/event/details/{service_event_id}/"
+
+
+def _collect_return_to_service_by_event(
+    client: RadMachineClient,
+    service_events: list[ServiceEvent],
+    cache: dict[str, dict],
+) -> dict[str, list[dict[str, object]]]:
+    event_urls = {event.url for event in service_events if event.url}
+    if not event_urls:
+        return {}
+
+    sessions_by_event: dict[str, dict[str, dict[str, object]]] = {}
+    relations = collect_service_log_return_to_service_qa(
+        client,
+        service_event_urls=event_urls,
+    )
+    for relation in relations:
+        if not relation.service_event or not relation.test_list_instance:
+            continue
+        session_url = _qa_review_url(relation.test_list_instance)
+        if not session_url:
+            continue
+        collection = _fetch_json(client, cache, relation.unit_test_collection)
+        group_name = str(collection.get("name", "")).strip()
+        event_sessions = sessions_by_event.setdefault(relation.service_event, {})
+        session = event_sessions.setdefault(
+            session_url,
+            {
+                "label": "Return to Service QA",
+                "session_url": session_url,
+                "qa_groups": [],
+            },
+        )
+        groups = session["qa_groups"]
+        if isinstance(groups, list) and group_name and group_name not in groups:
+            groups.append(group_name)
+
+    result: dict[str, list[dict[str, object]]] = {}
+    for event_url, sessions in sessions_by_event.items():
+        values = list(sessions.values())
+        for session in values:
+            groups = session.get("qa_groups", [])
+            if isinstance(groups, list):
+                session["label"] = _return_to_service_label(groups)
+        result[event_url] = values
+    return result
+
+
+def _return_to_service_label(groups: list[str]) -> str:
+    prefixes = [group.split("::", 1)[0].strip() for group in groups if group.strip()]
+    if prefixes and len(set(prefixes)) == 1:
+        prefix = prefixes[0]
+        if prefix.lower().endswith((" qa", " qc")):
+            return prefix
+        return f"{prefix} QA"
+    return "Return to Service QA"
+
+
+def _qa_review_url(api_url: str | None) -> str | None:
+    if not api_url:
+        return None
+    marker = "/api/qa/testlistinstances/"
+    if marker not in api_url:
+        return None
+    prefix, _ = api_url.split(marker, 1)
+    return f"{prefix}/qa/session/review/{extract_id(api_url)}/"
