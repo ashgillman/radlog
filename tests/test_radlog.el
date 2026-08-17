@@ -80,6 +80,17 @@
       (radlog--resolve-destination '((entry_type . "qa_session")) nil)
       '("/tmp/logbook.org" . "fallback")))))
 
+(ert-deftest radlog-resolve-destination-uses-candidate-destination-id ()
+  (let ((radlog-destination-map
+         '(("default" :file "/tmp/default-logbook.org" :id "DefaultHeading"))))
+    (should
+     (equal
+      (radlog--resolve-destination
+       '((entry_type . "monthly_dosimetry")
+         (metadata . ((destination_id . "TCCLogbookMDos"))))
+       "/tmp/logbook.org")
+      '("/tmp/default-logbook.org" . "TCCLogbookMDos")))))
+
 (ert-deftest radlog-resolve-destination-errors-without-route ()
   (let ((radlog-destination-map nil))
     (should-error

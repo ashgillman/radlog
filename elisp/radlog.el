@@ -330,11 +330,18 @@ If `radlog-save-with-hooks' is nil, save without running save hooks."
 
 Return a cons cell of (FILE . ID)."
   (let* ((entry-type (alist-get 'entry_type candidate))
-         (route (or (cdr (assoc entry-type radlog-destination-map))
-                    (cdr (assoc "default" radlog-destination-map))))
+         (specific-route (cdr (assoc entry-type radlog-destination-map)))
+         (default-route (cdr (assoc "default" radlog-destination-map)))
+         (route (or specific-route default-route))
          (file (plist-get route :file))
-         (id (plist-get route :id)))
+         (id (plist-get route :id))
+         (metadata (alist-get 'metadata candidate))
+         (candidate-id (alist-get 'destination_id metadata)))
     (cond
+     ((and specific-route file id)
+      (cons file id))
+     ((and candidate-id (or file fallback-file))
+      (cons (or file fallback-file) candidate-id))
      ((and file id)
       (cons file id))
      ((and fallback-file radlog-target-heading)
