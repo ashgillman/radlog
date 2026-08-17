@@ -280,6 +280,11 @@ def discover_source_sessions(
     if not monthly_for_date:
         raise SystemExit(f"No monthly dosimetry source sessions found for {linac} on {selected_date}")
     quickcheck_for_date = discover_quickcheck_source_sessions(client, linac, selected_date)
+    if not any(session.collection_name == "Quickcheck Photons" for session in quickcheck_for_date):
+        raise SystemExit(
+            f"No QuickCheck photon source session found for {linac} on {selected_date}; "
+            "perform or register QuickCheck QA before compiling constancy"
+        )
     return _source_selections(monthly_for_date + quickcheck_for_date)
 
 

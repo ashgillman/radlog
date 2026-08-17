@@ -345,6 +345,39 @@ def test_discover_source_sessions_queries_monthly_first_then_same_day_quickcheck
     assert [selection.role for selection in selections] == ["quickcheck_photons", "monthly_photon_10 MV"]
 
 
+def test_discover_source_sessions_reports_missing_quickcheck_photons(monkeypatch) -> None:
+    monthly = _session(
+        "11",
+        "Linac Monthly :: Dosimetry :: Output and relative dosimetry :: 10 MV",
+        "LA7 - Hayman",
+        [],
+        performed_at="2026-08-16T10:00:00+10:00",
+    )
+    monkeypatch.setattr(
+        "examples.quickcheck_constancy_tcc.discover_monthly_source_sessions",
+        lambda *_args, **_kwargs: [monthly],
+    )
+    monkeypatch.setattr(
+        "examples.quickcheck_constancy_tcc.discover_quickcheck_source_sessions",
+        lambda *_args, **_kwargs: [],
+    )
+
+    try:
+        discover_source_sessions(
+            object(),
+            "LA7",
+            "2026-08-16",
+            "2026-08-16",
+            selected_date="2026-08-16",
+        )
+    except SystemExit as exc:
+        message = str(exc)
+        assert "No QuickCheck photon source session found for LA7 on 2026-08-16" in message
+        assert "perform or register QuickCheck QA" in message
+    else:
+        raise AssertionError("expected SystemExit")
+
+
 def test_discover_quickcheck_source_sessions_attaches_test_slugs(monkeypatch) -> None:
     quickcheck = _session(
         "12",
