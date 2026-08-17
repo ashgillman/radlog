@@ -241,6 +241,24 @@ def test_render_service_ad_hoc_lists_multiple_return_to_service_sessions() -> No
     assert "(=" not in rendered
 
 
+def test_render_ct_ad_hoc_uses_service_layout_without_tags() -> None:
+    entry = CandidateEntry(
+        entry_type="ct_ad_hoc",
+        group_key="2026-06-16_CT Sim_ct_ad_hoc",
+        date="2026-06-16",
+        title="CT Sim Ad hoc QA",
+        tags=[],
+        performed_items=[PerformedItem(category="Problem Description", label="CT service work")],
+        source_ids=["service:501"],
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "**** [2026-06-16 Tue] CT Sim Ad hoc QA\n" in rendered
+    assert "- Problem Description :: CT service work" in rendered
+    assert "Performed:" not in rendered
+
+
 def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> None:
     entry = CandidateEntry(
         entry_type="abc_ad_hoc",
@@ -266,3 +284,63 @@ def test_render_service_ad_hoc_normalizes_multiline_problem_description() -> Non
     assert "\r" not in rendered
     assert "- Problem Description :: Balloon Tests 3B and 4B have been failing." in rendered
     assert "  These are not impacting on clinical performance, but may indicate balloon wear and tear." in rendered
+
+
+def test_render_arpansa_calibration_uses_authored_wording_and_compact_tags() -> None:
+    entry = CandidateEntry(
+        entry_type="arpansa_calibration",
+        group_key="2026-06-10_PTW 30013: 10765_ARPANSA Calibration",
+        date="2026-06-10",
+        title="ARPANSA Calibration",
+        tags=["PTW30013", "10765"],
+        performed_items=[
+            PerformedItem(
+                category="QA",
+                label=(
+                    "ARPANSA Calibration: pre- and post- imaging and ^{90}Sr dosimetry; "
+                    "update documentation with new calibration certificates"
+                ),
+            )
+        ],
+        source_ids=["qa:12361"],
+        metadata={"url": "https://radmachine.example/demo-customer/qa/session/details/12361/"},
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "**** [2026-06-10 Wed] ARPANSA Calibration :PTW30013:10765:" in rendered
+    assert "- ARPANSA Calibration: pre- and post- imaging and ^{90}Sr dosimetry; update documentation with new calibration certificates" in rendered
+    assert "Notable events:" not in rendered
+
+
+def test_render_monthly_dosimetry_uses_inline_source_links() -> None:
+    entry = CandidateEntry(
+        entry_type="monthly_dosimetry",
+        group_key="2026-06-16_Monthly dosimetry_monthly_dosimetry",
+        date="2026-06-16",
+        title="Monthly dosimetry",
+        performed_items=[
+            PerformedItem(
+                category="QA",
+                label="Sr-90 Constancy, Leakage - Farmer chambers",
+                links=[
+                    LinkRef(label="FC65-G 1782", url="https://radmachine.example/demo-customer/qa/session/details/14709/"),
+                    LinkRef(label="FC65-G 4698", url="https://radmachine.example/demo-customer/qa/session/details/14711/"),
+                ],
+            ),
+            PerformedItem(
+                category="QA",
+                label="Thermometer Constancy",
+                url="https://radmachine.example/demo-customer/qa/session/details/14718/",
+            ),
+        ],
+        source_ids=["qa:14709", "qa:14711", "qa:14718"],
+        metadata={"suppress_links_block": True},
+    )
+
+    rendered = render_candidate(entry)
+
+    assert "**** [2026-06-16 Tue] Monthly dosimetry" in rendered
+    assert "- Sr-90 Constancy, Leakage - Farmer chambers ([[https://radmachine.example/demo-customer/qa/session/details/14709/][FC65-G 1782]], [[https://radmachine.example/demo-customer/qa/session/details/14711/][FC65-G 4698]])" in rendered
+    assert "- [[https://radmachine.example/demo-customer/qa/session/details/14718/][Thermometer Constancy]]" in rendered
+    assert "RadMachine links:" not in rendered

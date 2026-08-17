@@ -74,8 +74,29 @@ class TccSimilarRules(SiteRules):
             unit = "ABC"
         elif entry_type == "linac_ad_hoc":
             title = f"{unit} Ad hoc QA"
-            tags = [tag for tag in (site, unit, "AdHocQA") if tag]
+            tags = _split_linac_service_tags(first.unit)
             group_label = "linac_ad_hoc"
+        elif entry_type == "ct_ad_hoc":
+            title = f"{unit} Ad hoc QA"
+            tags = []
+            group_label = "ct_ad_hoc"
+        elif entry_type == "ct_monthly":
+            title = first.title or f"{unit} Monthly QA"
+            tags = []
+            group_label = "ct_monthly"
+        elif entry_type == "ct_quarterly":
+            title = first.title or f"{unit} Quarterly QA"
+            tags = []
+            group_label = "ct_quarterly"
+        elif entry_type == "arpansa_calibration":
+            title = first.title or "ARPANSA Calibration"
+            tags = _equipment_tags(first.unit)
+            group_label = title
+        elif entry_type == "monthly_dosimetry":
+            title = "Monthly dosimetry"
+            tags = []
+            group_label = "monthly_dosimetry"
+            unit = "Monthly dosimetry"
         elif entry_type == "ad_hoc_qa":
             title = f"{unit} Ad hoc QA"
             tags = [tag for tag in (site, unit, "AdHocQA") if tag]
@@ -86,10 +107,20 @@ class TccSimilarRules(SiteRules):
             group_label = label
 
         metadata = _record_urls_metadata(records, entry_type)
-        if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ad_hoc_qa"}:
+        destination_id = _destination_id(entry_type)
+        if destination_id:
+            metadata["destination_id"] = destination_id
+        if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ct_ad_hoc", "ad_hoc_qa"}:
             performed_items = _service_event_performed_items(records)
             prompts = _service_event_detail_prompts(records)
             metadata.update(_service_event_metadata(records))
+        elif entry_type == "monthly_dosimetry":
+            performed_items = _monthly_dosimetry_items(records)
+            prompts = list(dict.fromkeys(self._notable_prompts(records, entry_type)))
+            metadata["suppress_links_block"] = True
+        elif entry_type == "arpansa_calibration":
+            performed_items = [_arpansa_calibration_item(first)]
+            prompts = []
         else:
             performed_items = self._aggregate_performed_items(
                 entry_type,
@@ -115,18 +146,36 @@ class TccSimilarRules(SiteRules):
         )
 
     def _infer_entry_type(self, record: SourceRecord) -> str:
+        title = (record.title or "").strip()
+        if title in {"ARPANSA Calibration", "ARPANSA Electrometer Calibration"}:
+            return "arpansa_calibration"
+        if title in {
+            "Sr-90 Constancy",
+            "Electrometer Constancy",
+            "Thermometer Constancy",
+            "Barometer Constancy",
+        }:
+            return "monthly_dosimetry"
+
         if record.source_type == "service_event":
             equipment = self._equipment_group(record)
             if equipment == "abc":
                 return "abc_ad_hoc"
             if equipment == "linac":
                 return "linac_ad_hoc"
+            if equipment == "ct":
+                return "ct_ad_hoc"
             return "ad_hoc_qa"
 
         equipment = self._equipment_group(record)
         frequency = self._collection_frequency_name(record)
         if equipment == "linac" and frequency == "monthly":
             return "linac_mqc"
+        if equipment == "ct":
+            if "quarterly" in title.lower():
+                return "ct_quarterly"
+            if frequency == "monthly" or "monthly" in title.lower():
+                return "ct_monthly"
         if (record.title or "") == "ABC Weekly QC":
             return "abc_weekly"
         return "qa_session"
@@ -142,6 +191,13 @@ class TccSimilarRules(SiteRules):
             return "linac_ad_hoc"
         if entry_type == "ad_hoc_qa":
             return "ad_hoc_qa"
+        if entry_type in {
+            "ct_ad_hoc",
+            "ct_monthly",
+            "ct_quarterly",
+            "monthly_dosimetry",
+        }:
+            return entry_type
         if (
             self._equipment_group(record) == "linac"
             and (record.title or "").startswith("Reference dosimetry :: ")
@@ -154,6 +210,8 @@ class TccSimilarRules(SiteRules):
     def _bucket_unit(self, record: SourceRecord, entry_type: str) -> str:
         if entry_type in {"abc_weekly", "abc_ad_hoc"}:
             return "ABC"
+        if entry_type == "monthly_dosimetry":
+            return "Monthly dosimetry"
         return record.unit or ""
 
     def _equipment_group(self, record: SourceRecord) -> str | None:
@@ -162,6 +220,8 @@ class TccSimilarRules(SiteRules):
             return "linac"
         if unit.startswith("ABC"):
             return "abc"
+        if unit.startswith("CT"):
+            return "ct"
         return None
 
     def _collection_frequency_name(self, record: SourceRecord) -> str | None:
@@ -194,7 +254,7 @@ class TccSimilarRules(SiteRules):
             return _map_linac_mqc_performed_item(record)
         if entry_type == "abc_weekly":
             return PerformedItem(category=record.unit or "ABC", label=record.title or record.remote_id)
-        if entry_type in {"abc_ad_hoc", "linac_ad_hoc"}:
+        if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ct_ad_hoc"}:
             service_event = record.raw.get("service_event", {})
             if isinstance(service_event, dict):
                 category = str(service_event.get("service_type_name") or "Service").strip()
@@ -211,7 +271,7 @@ class TccSimilarRules(SiteRules):
         return items
 
     def _notable_prompts(self, records: list[SourceRecord], entry_type: str) -> list[str]:
-        if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ad_hoc_qa"}:
+        if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ct_ad_hoc", "ad_hoc_qa"}:
             prompts = []
             for record in records:
                 service_event = record.raw.get("service_event", {})
@@ -614,6 +674,128 @@ def _session_site_url(record: SourceRecord) -> str | None:
         return None
     url = str(session.get("site_url", "")).strip()
     return url or None
+
+
+def _arpansa_calibration_item(record: SourceRecord) -> PerformedItem:
+    if record.title == "ARPANSA Electrometer Calibration":
+        label = (
+            "ARPANSA Electrometer Calibration: pre- and post- UNITEST constancy, "
+            "update documentation and spreadsheets with new certificate k_{elec}"
+        )
+    else:
+        label = (
+            "ARPANSA Calibration: pre- and post- imaging and ^{90}Sr dosimetry; "
+            "update documentation with new calibration certificates"
+        )
+    return PerformedItem(category="QA", label=label)
+
+
+def _monthly_dosimetry_items(records: list[SourceRecord]) -> list[PerformedItem]:
+    buckets: dict[str, list[LinkRef]] = {
+        "farmer": [],
+        "pp": [],
+        "semiflex": [],
+        "electrometer": [],
+    }
+    standalone: dict[str, PerformedItem] = {}
+
+    for record in records:
+        url = _session_site_url(record)
+        if record.title == "Thermometer Constancy":
+            standalone["thermometer"] = PerformedItem(category="QA", label=record.title, url=url)
+            continue
+        if record.title == "Barometer Constancy":
+            standalone["barometer"] = PerformedItem(category="QA", label=record.title, url=url)
+            continue
+        label, _serial = _monthly_equipment_label(record.unit)
+        if not label or not url:
+            continue
+        if record.title == "Electrometer Constancy":
+            bucket = "electrometer"
+        elif "PPC40" in label or "Markus" in label:
+            bucket = "pp"
+        elif "31010" in label:
+            bucket = "semiflex"
+        else:
+            bucket = "farmer"
+        buckets[bucket].append(LinkRef(label=label, url=url))
+
+    items: list[PerformedItem] = []
+    definitions = [
+        ("farmer", "Sr-90 Constancy, Leakage - Farmer chambers"),
+        ("pp", "Sr-90 Constancy, Leakage - PP chambers"),
+        ("semiflex", "Sr-90 Constancy, Leakage - Semiflex chambers"),
+        ("electrometer", "Electrometer Constancy (UNITEST)"),
+    ]
+    for bucket, label in definitions:
+        links = sorted(
+            buckets[bucket],
+            key=lambda link: _monthly_link_order(bucket, link.label),
+        )
+        if links:
+            items.append(PerformedItem(category="QA", label=label, links=links))
+    for key in ("thermometer", "barometer"):
+        if key in standalone:
+            items.append(standalone[key])
+    return items
+
+
+def _monthly_equipment_label(unit: str | None) -> tuple[str, int]:
+    equipment, _, serial_text = (unit or "").partition(":")
+    serial = int(serial_text.strip() or "0")
+    normalized = " ".join(equipment.split())
+    normalized = normalized.removeprefix("IBA ")
+    replacements = {
+        "FC-65G": "FC65-G",
+        "FC65-G": "FC65-G",
+        "PTW Adv Markus": "PTW Advanced Markus",
+    }
+    if normalized in replacements:
+        normalized = replacements[normalized]
+    return f"{normalized} {serial}", serial
+
+
+def _label_serial(label: str) -> int:
+    try:
+        return int(label.rsplit(" ", 1)[-1])
+    except ValueError:
+        return 0
+
+
+def _monthly_link_order(bucket: str, label: str) -> tuple[int, int]:
+    preferred = {
+        "farmer": ["FC65-G 1782", "FC65-G 4698", "PTW 30013 11298"],
+        "pp": ["PPC40 850", "PPC40 839", "PTW Advanced Markus 2348"],
+        "semiflex": ["PTW 31010 7799", "PTW 31010 5811"],
+    }.get(bucket, [])
+    if label in preferred:
+        return (0, preferred.index(label))
+    return (1, _label_serial(label))
+
+
+def _equipment_tags(unit: str | None) -> list[str]:
+    equipment, separator, serial = (unit or "").partition(":")
+    tags = [_compact_tag(equipment)]
+    if separator and serial.strip():
+        tags.append(_compact_tag(serial))
+    return [tag for tag in tags if tag]
+
+
+def _split_linac_service_tags(unit: str | None) -> list[str]:
+    linac, separator, site = (unit or "").partition(" - ")
+    if not separator:
+        return [linac] if linac else []
+    return [tag for tag in (linac.strip(), site.strip()) if tag]
+
+
+def _destination_id(entry_type: str) -> str | None:
+    return {
+        "arpansa_calibration": "TCCLogbookARPANSACal",
+        "monthly_dosimetry": "TCCLogbookMDos",
+        "ct_ad_hoc": "TCCLogbookCTAdHocQA",
+        "ct_monthly": "TCCLogbookCTMonthlyQA",
+        "ct_quarterly": "TCCLogbookCTQuarterlyQA",
+    }.get(entry_type)
 
 
 def _ordered_links(items: list[PerformedItem], label_order: list[str]) -> list[LinkRef]:

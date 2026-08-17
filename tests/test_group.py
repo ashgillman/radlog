@@ -220,6 +220,131 @@ def test_group_source_records_routes_abc_service_events_to_abc_ad_hoc() -> None:
     ]
 
 
+def test_tcc_linac_ad_hoc_splits_full_service_unit_into_tags() -> None:
+    record = SourceRecord(
+        source_type="service_event",
+        remote_id="500",
+        performed_at="2026-07-24T08:00:00+10:00",
+        unit="LA8 - Mornington",
+        title="Service work",
+        raw={"service_event": {"problem_description": "Service work"}},
+    )
+
+    entry = group_source_records([record], rules=RULES)[0]
+
+    assert entry.entry_type == "linac_ad_hoc"
+    assert entry.title == "LA8 - Mornington Ad hoc QA"
+    assert entry.tags == ["LA8", "Mornington"]
+    assert "AdHocQA" not in entry.tags
+
+
+def test_tcc_ct_ad_hoc_has_no_tags_and_routes_to_ct_section() -> None:
+    record = SourceRecord(
+        source_type="service_event",
+        remote_id="501",
+        performed_at="2026-06-16T08:00:00+10:00",
+        unit="CT Sim",
+        title="CT service work",
+        raw={"service_event": {"problem_description": "CT service work"}},
+    )
+
+    entry = group_source_records([record], rules=RULES)[0]
+
+    assert entry.entry_type == "ct_ad_hoc"
+    assert entry.title == "CT Sim Ad hoc QA"
+    assert entry.tags == []
+    assert entry.metadata["destination_id"] == "TCCLogbookCTAdHocQA"
+
+
+def test_tcc_routes_ct_monthly_and_quarterly_to_separate_sections() -> None:
+    records = [
+        _record("502", "2026-06-16T08:00:00+10:00", "CT Sim", None, "CT Monthly QA"),
+        _record("503", "2026-06-16T09:00:00+10:00", "CT Sim", None, "CT Quarterly QA"),
+    ]
+
+    entries = group_source_records(records, rules=RULES)
+
+    assert [(entry.entry_type, entry.metadata["destination_id"]) for entry in entries] == [
+        ("ct_monthly", "TCCLogbookCTMonthlyQA"),
+        ("ct_quarterly", "TCCLogbookCTQuarterlyQA"),
+    ]
+
+
+def test_tcc_groups_and_formats_arpansa_calibrations() -> None:
+    records = [
+        _record("12361", "2026-06-10T08:00:00+10:00", "PTW 30013: 10765", None, "ARPANSA Calibration"),
+        _record(
+            "14607",
+            "2026-06-10T09:00:00+10:00",
+            "PTW Webline Unidos: 384",
+            None,
+            "ARPANSA Electrometer Calibration",
+        ),
+    ]
+
+    entries = group_source_records(records, rules=RULES)
+
+    assert len(entries) == 2
+    assert [entry.entry_type for entry in entries] == ["arpansa_calibration", "arpansa_calibration"]
+    assert entries[0].tags == ["PTW30013", "10765"]
+    assert entries[1].tags == ["PTWWeblineUnidos", "384"]
+    assert all(entry.metadata["destination_id"] == "TCCLogbookARPANSACal" for entry in entries)
+    assert entries[0].performed_items[0].label == (
+        "ARPANSA Calibration: pre- and post- imaging and ^{90}Sr dosimetry; "
+        "update documentation with new calibration certificates"
+    )
+    assert entries[1].performed_items[0].label == (
+        "ARPANSA Electrometer Calibration: pre- and post- UNITEST constancy, "
+        "update documentation and spreadsheets with new certificate k_{elec}"
+    )
+
+
+def test_tcc_consolidates_monthly_dosimetry_by_chamber_type() -> None:
+    details = [
+        ("14709", "IBA FC-65G: 1782", "Sr-90 Constancy"),
+        ("14710", "IBA PPC40: 850", "Sr-90 Constancy"),
+        ("14711", "IBA FC65-G: 4698", "Sr-90 Constancy"),
+        ("14712", "IBA PPC40: 839", "Sr-90 Constancy"),
+        ("14713", "PTW 30013: 11298", "Sr-90 Constancy"),
+        ("14714", "PTW Adv Markus: 2348", "Sr-90 Constancy"),
+        ("14715", "PTW Webline Unidos: 85", "Electrometer Constancy"),
+        ("14716", "PTW UNIDOS E: 90159", "Electrometer Constancy"),
+        ("14717", "PTW 31010: 007799", "Sr-90 Constancy"),
+        ("14718", "Thermometer Constancy", "Thermometer Constancy"),
+        ("14719", "Barometer Constancy", "Barometer Constancy"),
+        ("14720", "PTW Webline Unidos: 17", "Electrometer Constancy"),
+        ("14721", "PTW 31010: 005811", "Sr-90 Constancy"),
+        ("14722", "PTW Webline Unidos: 384", "Electrometer Constancy"),
+    ]
+    records = [
+        _record(remote_id, "2026-06-16T08:00:00+10:00", unit, None, title)
+        for remote_id, unit, title in details
+    ]
+
+    entries = group_source_records(records, rules=RULES)
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.entry_type == "monthly_dosimetry"
+    assert entry.title == "Monthly dosimetry"
+    assert entry.tags == []
+    assert entry.metadata["destination_id"] == "TCCLogbookMDos"
+    assert entry.metadata["suppress_links_block"] is True
+    assert [(item.label, [link.label for link in item.links]) for item in entry.performed_items] == [
+        ("Sr-90 Constancy, Leakage - Farmer chambers", ["FC65-G 1782", "FC65-G 4698", "PTW 30013 11298"]),
+        ("Sr-90 Constancy, Leakage - PP chambers", ["PPC40 850", "PPC40 839", "PTW Advanced Markus 2348"]),
+        ("Sr-90 Constancy, Leakage - Semiflex chambers", ["PTW 31010 7799", "PTW 31010 5811"]),
+        (
+            "Electrometer Constancy (UNITEST)",
+            ["PTW Webline Unidos 17", "PTW Webline Unidos 85", "PTW Webline Unidos 384", "PTW UNIDOS E 90159"],
+        ),
+        ("Thermometer Constancy", []),
+        ("Barometer Constancy", []),
+    ]
+    assert entry.performed_items[4].url.endswith("/14718/")
+    assert entry.performed_items[5].url.endswith("/14719/")
+
+
 def test_group_source_records_uses_monthly_collection_metadata_for_linac_mqc() -> None:
     monthly_frequency = "https://radmachine.example/demo-customer/api/qa/frequencies/3/"
     monthly_due_date = "2026-04-01T08:00:00+10:00"

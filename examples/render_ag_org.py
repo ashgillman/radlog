@@ -159,6 +159,7 @@ RENDERERS = {
     "abc_ad_hoc": render_service_ad_hoc,
     "abc_weekly": render_generic,
     "ad_hoc_qa": render_service_ad_hoc,
+    "ct_ad_hoc": render_service_ad_hoc,
     "linac_mqc": render_linac_mqc,
     "linac_ad_hoc": render_service_ad_hoc,
     "post_pmi": render_post_pmi,
