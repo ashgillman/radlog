@@ -238,20 +238,35 @@ def _submission_comment(draft: QuickcheckConstancyDraft) -> str:
         "",
         "Source sessions:",
     ]
-    seen: set[str] = set()
-    for energy, source in sorted(draft.energies.items()):
-        for label, session_id, url in (
-            ("QuickCheck", source.quickcheck_session_id, source.quickcheck_url),
-            ("Monthly dosimetry", source.monthly_session_id, source.monthly_url),
-        ):
-            if not session_id or not url:
+    for modality in ("MV", "MeV"):
+        sources = sorted(
+            (
+                (energy, source)
+                for energy, source in draft.energies.items()
+                if energy.endswith(f" {modality}")
+            ),
+            key=lambda item: _energy_sort_key(item[0]),
+        )
+        seen_quickcheck_sessions: set[str] = set()
+        for _energy, source in sources:
+            if not source.quickcheck_session_id or not source.quickcheck_url:
                 continue
-            key = f"{label}:{session_id}"
-            if key in seen:
+            if source.quickcheck_session_id in seen_quickcheck_sessions:
                 continue
-            seen.add(key)
-            lines.append(f"- {energy} {label}: {url}")
+            seen_quickcheck_sessions.add(source.quickcheck_session_id)
+            lines.append(f"{modality} QuickCheck: {source.quickcheck_url}")
+        for energy, source in sources:
+            if source.monthly_session_id and source.monthly_url:
+                lines.append(f"{energy} Monthly dosimetry: {source.monthly_url}")
     return "\n".join(lines)
+
+
+def _energy_sort_key(energy: str) -> tuple[float, str]:
+    try:
+        value = float(energy.split(" ", 1)[0])
+    except ValueError:
+        value = float("inf")
+    return value, energy
 
 
 def load_sessions_by_ids(client: RadMachineClient, session_ids: list[int]) -> list[ResolvedSession]:

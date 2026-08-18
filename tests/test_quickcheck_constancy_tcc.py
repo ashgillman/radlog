@@ -19,6 +19,7 @@ from examples.quickcheck_constancy_tcc import (
     source_date_range,
     select_latest_source_sessions,
     select_source_sessions_tui,
+    _submission_comment,
     _source_selections,
     ResolvedSession,
 )
@@ -230,6 +231,74 @@ def test_build_submission_payload_rejects_mixed_quickcheck_serials() -> None:
         assert "Multiple QuickCheck serials found" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_submission_comment_groups_sources_by_modality_and_numeric_energy() -> None:
+    photon_qc_url = "https://radmachine.example/tcc/qa/session/details/15741/"
+    electron_qc_url = "https://radmachine.example/tcc/qa/session/details/15746/"
+    draft = QuickcheckConstancyDraft(
+        linac="LA7",
+        quickcheck_serial="3534",
+        energies={
+            "15 MeV": EnergyDraft(
+                "15 MeV",
+                monthly_session_id="15730",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15730/",
+            ),
+            "10 MV": EnergyDraft(
+                "10 MV",
+                quickcheck_session_id="15741",
+                quickcheck_url=photon_qc_url,
+                monthly_session_id="15729",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15729/",
+            ),
+            "6 MV": EnergyDraft(
+                "6 MV",
+                quickcheck_session_id="15741",
+                quickcheck_url=photon_qc_url,
+                monthly_session_id="15728",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15728/",
+            ),
+            "12 MeV": EnergyDraft(
+                "12 MeV",
+                monthly_session_id="15731",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15731/",
+            ),
+            "10 MeV": EnergyDraft(
+                "10 MeV",
+                quickcheck_session_id="15746",
+                quickcheck_url=electron_qc_url,
+                monthly_session_id="15732",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15732/",
+            ),
+            "6 MeV": EnergyDraft(
+                "6 MeV",
+                quickcheck_session_id="15746",
+                quickcheck_url=electron_qc_url,
+                monthly_session_id="15733",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15733/",
+            ),
+            "8 MeV": EnergyDraft(
+                "8 MeV",
+                monthly_session_id="15734",
+                monthly_url="https://radmachine.example/tcc/qa/session/details/15734/",
+            ),
+        },
+    )
+
+    assert _submission_comment(draft) == """Compiled by radlog from source QA.
+QuickCheck serial: 3534
+
+Source sessions:
+MV QuickCheck: https://radmachine.example/tcc/qa/session/details/15741/
+6 MV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15728/
+10 MV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15729/
+MeV QuickCheck: https://radmachine.example/tcc/qa/session/details/15746/
+6 MeV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15733/
+8 MeV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15734/
+10 MeV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15732/
+12 MeV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15731/
+15 MeV Monthly dosimetry: https://radmachine.example/tcc/qa/session/details/15730/"""
 
 
 def test_parse_battery_check_accepts_expected_aliases() -> None:
