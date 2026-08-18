@@ -238,6 +238,33 @@ def test_tcc_linac_ad_hoc_splits_full_service_unit_into_tags() -> None:
     assert "AdHocQA" not in entry.tags
 
 
+def test_tcc_routes_all_la10_yamaru_qa_to_mrl_section() -> None:
+    monthly = _record(
+        "510",
+        "2026-08-17T08:00:00+10:00",
+        "LA10",
+        "Yamaru",
+        "Linac Monthly :: Mechanical",
+        frequency="https://radmachine.example/demo-customer/api/qa/frequencies/3/",
+    )
+    service = SourceRecord(
+        source_type="service_event",
+        remote_id="511",
+        performed_at="2026-08-18T08:00:00+10:00",
+        unit="LA10 - Yamaru",
+        title="MRL service work",
+        raw={"service_event": {"problem_description": "MRL service work"}},
+    )
+
+    monthly_entry = group_source_records([monthly], rules=RULES)[0]
+    service_entry = group_source_records([service], rules=RULES)[0]
+
+    assert monthly_entry.entry_type == "linac_mqc"
+    assert service_entry.entry_type == "linac_ad_hoc"
+    assert monthly_entry.metadata["destination_id"] == "TCCLogbookMRLQA"
+    assert service_entry.metadata["destination_id"] == "TCCLogbookMRLQA"
+
+
 def test_tcc_ct_ad_hoc_has_no_tags_and_routes_to_ct_section() -> None:
     record = SourceRecord(
         source_type="service_event",

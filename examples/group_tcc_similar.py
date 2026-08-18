@@ -107,7 +107,7 @@ class TccSimilarRules(SiteRules):
             group_label = label
 
         metadata = _record_urls_metadata(records, entry_type)
-        destination_id = _destination_id(entry_type)
+        destination_id = _destination_id(entry_type, records)
         if destination_id:
             metadata["destination_id"] = destination_id
         if entry_type in {"abc_ad_hoc", "linac_ad_hoc", "ct_ad_hoc", "ad_hoc_qa"}:
@@ -788,7 +788,9 @@ def _split_linac_service_tags(unit: str | None) -> list[str]:
     return [tag for tag in (linac.strip(), site.strip()) if tag]
 
 
-def _destination_id(entry_type: str) -> str | None:
+def _destination_id(entry_type: str, records: list[SourceRecord]) -> str | None:
+    if any(_is_la10_yamaru(record) for record in records):
+        return "TCCLogbookMRLQA"
     return {
         "arpansa_calibration": "TCCLogbookARPANSACal",
         "monthly_dosimetry": "TCCLogbookMDos",
@@ -796,6 +798,14 @@ def _destination_id(entry_type: str) -> str | None:
         "ct_monthly": "TCCLogbookCTMonthlyQA",
         "ct_quarterly": "TCCLogbookCTQuarterlyQA",
     }.get(entry_type)
+
+
+def _is_la10_yamaru(record: SourceRecord) -> bool:
+    unit = (record.unit or "").strip()
+    site = (record.site or "").strip()
+    if " - " in unit:
+        unit, site = (part.strip() for part in unit.split(" - ", 1))
+    return unit.casefold() == "la10" and site.casefold() == "yamaru"
 
 
 def _ordered_links(items: list[PerformedItem], label_order: list[str]) -> list[LinkRef]:
