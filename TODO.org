@@ -1,8 +1,5 @@
 #+title: TODO - RadMachine → Org Logbook Importer
 
-* TODO Nix environment
-- [ ] Document the expected =nix develop= / =direnv allow= workflow
-
 * TODO Endpoint discovery
 - [ ] Confirm actual site-specific endpoints for:
   - [ ] faults
@@ -64,14 +61,6 @@
   - [ ] fault
 - [ ] Create example JSON candidate outputs when the CLI format is less fluid
 - [ ] Create example rendered Org outputs when renderer structure is less fluid
-
-* TODO Documentation
-- [ ] Document local setup
-- [ ] Document environment variables
-- [ ] Document how Emacs finds Python
-- [ ] Document grouping philosophy
-- [ ] Document limits of automation
-- [ ] Document duplicate-handling behaviour
 
 * TODO Nice-to-have later
 - [ ] Incremental sync mode

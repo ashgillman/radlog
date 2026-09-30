@@ -1,514 +1,265 @@
-#+title: RadMachine -> Org Logbook Importer
+#+title: radlog — RadMachine workflow tools
 #+author: Ashley Gillman, OpenAI
 
-* Overview
+* What radlog is for
 
-This repository is building a small import-and-review tool for turning
-RadMachine activity into draft Org logbook entries.
+RadMachine is the system of record for equipment QA, service events, faults,
+and review. =radlog= is a small Python library and command-line tool for
+workflows that need to *reuse* those records outside a single RadMachine test
+list or report. It reads the RadMachine API, resolves related records, and
+lets you define how to filter, combine, present, or draft from them.
 
-The intent is not to dump raw API exports into Org. The tool should fetch
-structured operational data, infer likely authored logbook entries, render a
-draft, and leave the final wording to review and editing.
+The main use case is turning several source records into one useful piece of
+work. For example, a monthly linac logbook entry may draw on many performed QA
+sessions and a service event. A composite QA test may need results from both
+monthly dosimetry and a QuickCheck session. Radlog can find those sources,
+retain their links and IDs, and prepare an output for a person to review.
 
-* What Works Now
+Current interfaces:
 
-Current implemented functionality:
+| Need | radlog entry point |
+|-
+| Inspect or export API records | =python -m radlog.cli --export-raw ...= |
+| Build factual QA reports with local filters | =python -m radlog.cli --report qa ...= |
+| Draft Org logbook entries for review | =M-x radlog-import-radmachine= |
+| Build a composite QA submission | =examples/quickcheck_constancy_tcc.py= |
+| Write another site workflow | =radlog.api=, =radlog.collect=, =radlog.qa_results= |
 
-- Nix + direnv development environment
-- token-based RadMachine API access via environment variable
-- typed client methods for common QA, unit, service event, and service-log RTS
-  QA endpoints
-- tolerant dataclass mirrors for commonly used RadMachine API objects, while
-  preserving raw payloads
-- live API probing from the CLI
-- live collection of QA session data from =qa/testlistinstances=
-- lookup and normalization of linked =unittestcollections= and =units/units=
-- initial grouping of same-day same-unit =Linac Monthly ::= sessions into a
-  =linac_mqc= candidate
-- draft Org rendering for =linac_mqc= candidates
-- automated tests for config loading, CLI behavior, collection, grouping, and
-  rendering
-- sample redacted API payloads under =examples/sample_api_payloads/=
+Radlog does not replace RadMachine's QA review or clinical record. Its Org
+entries are editable summaries, and its example QA compiler shows the proposed
+payload before any upload.
 
-This means the repository can already fetch real monthly linac QA data and emit
-draft Org text that is close enough to inspect manually.
+* How it relates to RadMachine
 
-* Current CLI Use
+RadMachine already provides configurable QA tests, Python calculations,
+trending, scheduled and ad hoc reports, service and fault logging, and an API.
+Use those native features for routine data entry, analysis, and review. Radlog
+is useful when a task needs custom selection across sessions or record types,
+a local report format or filter, an external authored logbook, or a repeatable
+transformation before API submission.
 
-Assuming RadMachine config is available and =RADMACHINE_TOKEN= is available via
-=direnv=:
+Radformation's [[https://www.radformation.com/radmachine/radmachine][RadMachine overview]] describes the product features. Its
+[[https://resources.radformation.com/en-us/radmachineqat][feature comparison]] lists API access. The public
+[[https://docs.qatrackplus.com/en/next/api/guide.html][QATrack+ API guide]] documents a related JSON API, including pagination,
+filtering, and test-list submission. Radlog's endpoint choices and
+=RadAuthorization= header are based on the API behaviour observed on a
+RadMachine customer instance; QATrack+ documentation is useful background,
+not a complete specification for every RadMachine deployment. Confirm
+instance-specific fields and permissions before adapting a workflow.
+
+* Start here
+
+This repository is currently intended for use from a source checkout. The
+Nix development shell supplies Python, =requests=, Emacs, and a =radlog=
+command wrapper:
 
 #+begin_src sh
-direnv allow
-python -m radlog.cli --format json
+nix develop
 #+end_src
 
-Use =--config path/to/config.toml= to override the default config discovery.
+Run commands from the checkout root. If you use =direnv=, arrange for it to
+load the Nix shell and your local environment, then run =direnv allow=.
+Without Nix, use a Python environment with =requests= installed and run
+=python -m radlog.cli= from the checkout root.
 
-Useful current modes:
+Copy =config.toml.example= to =~/.config/radlog/config.toml= (or pass
+=--config /path/to/config.toml=). Set your base URL and customer ID. The
+recommended token setup is:
 
-- probe API root:
+#+begin_src toml
+[radmachine]
+base_url = "https://radmachine.radformation.com"
+customer_id = "your-customer-id"
+username = "your-username"
+token_env = "RADMACHINE_TOKEN"
+#+end_src
+
+Set =RADMACHINE_TOKEN= in your shell environment or a local secret manager.
+Do not commit a token. The example config also supports a local =token= field.
+=RADLOG_CONFIG= can point to a different config file. On Windows, the default
+config location is =%APPDATA%\radlog\config.toml=.
+
+Check connectivity and available API roots:
 
 #+begin_src sh
-python -m radlog.cli --config config.toml
+python -m radlog.cli
 #+end_src
 
-- collect normalized QA sessions:
+The client uses token authentication and the customer API root
+=/<customer_id>/api/=. It follows paginated =results= responses. The CLI
+reports API errors to stderr.
+
+* Workflows
+
+** Explore source records
+
+Use raw export to inspect records before writing a transformation:
 
 #+begin_src sh
 python -m radlog.cli \
-  --config config.toml \
-  --collect qa-sessions \
-  --start 2026-03-06 \
-  --end 2026-03-06 \
-  --param 'unit_test_collection__unit__name=LAx - LinacName'
-#+end_src
-
-- collect grouped QA candidates with rendered Org:
-
-#+begin_src sh
-python -m radlog.cli \
-  --config config.toml \
-  --collect qa-candidates \
-  --start 2026-03-06 \
-  --end 2026-03-06 \
-  --param 'unit_test_collection__unit__name=LAx - LinacName' \
-  --limit 20
-#+end_src
-
-- export raw RadMachine records without transforming them:
-
-#+begin_src sh
-python -m radlog.cli \
-  --config config.toml \
   --export-raw qa-testlistinstances \
+  --start 2026-09-30 --end 2026-09-30 \
   --limit 100
 #+end_src
 
-Raw export mode is for saving or inspecting the exact JSON records returned by
-RadMachine. It does not group records, render Org, update logbooks, or write
-back to RadMachine. It is useful before developing transformations such as:
+Other targets are =qa-testinstances=, =qa-unittestcollections=, =units=,
+=service-events=, and =service-log-return-to-service-qa=. Repeated
+=--param KEY=VALUE= options pass API filters through to RadMachine. For targets with
+a known date field, =--start= and =--end= also filter returned records
+locally. Raw export does not write back to RadMachine.
 
-- building a report from known API records
-- composing a derived test entry from existing test entries
-- keeping an audit snapshot before experimenting with write/create features
-
-Filters are passed through as query parameters:
+For normalized records, use =--collect qa-sessions=. For draft candidates,
+use =--collect qa-candidates=:
 
 #+begin_src sh
 python -m radlog.cli \
-  --config config.toml \
-  --export-raw qa-testinstances \
-  --start 2026-03-01 \
-  --end 2026-03-31 \
-  --param 'skipped=False' \
-  --limit 100
+  --collect qa-candidates \
+  --start 2026-09-30 --end 2026-09-30 \
+  --user your-username
 #+end_src
 
-For raw export targets with a known date field, =--start= and =--end= filter
-the returned records client-side and add a sensible default ordering if one was
-not supplied. This avoids guessing undocumented RadMachine range-filter names.
-Explicit =--param ordering=...= values are preserved.
+The JSON contains source =records= and grouped =candidates=, including their
+=rendered_org= drafts. Candidate output depends on the configured grouping
+rules and renderer. The conservative defaults group by date, unit, and source
+title; the example modules under =examples/= show a more tailored logbook.
+The =--user= filter applies to QA sessions; service events are collected for
+the date range independently.
 
-* Current Output Shape
+** Review Org logbook drafts
 
-The CLI currently emits JSON with:
+Load =elisp/radlog.el= in Emacs, configure a destination Org file and an Org
+heading ID, then run =M-x radlog-import-radmachine=. The command asks for a
+date range and username, retrieves candidates, and inserts each draft into its
+destination buffer for in-place editing and review.
 
-- request metadata
-- redacted config
-- =server= for raw endpoint probes
-- =records= for normalized source records
-- =candidates= for grouped entries
-- =raw_export= for unmodified API records from =--export-raw=
-- =report= for structured report output from =--report=
-
-For =linac_mqc= candidates, =rendered_org= now contains the draft Org text.
-
-* Reports
-
-The report path is separate from the Org logbook path. It produces factual
-report records rather than authored logbook candidates.
-
-Current report mode:
-
-#+begin_src sh
-python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --where 'issue in action,tolerance,comment'
+#+begin_src emacs-lisp
+(load-file "/path/to/radlog/elisp/radlog.el")
+(setq radlog-python-command "python"
+      radlog-target-file "~/org/logbook.org"
+      radlog-destination-map
+      '(("default" :file "~/org/logbook.org" :id "YOUR-ORG-HEADING-ID")))
 #+end_src
 
-For quick inspection before HTML rendering:
+Emacs must be able to run Python with =requests= installed. The command runs
+Python from the repository root. If your Python executable is elsewhere, set
+=radlog-python-command= accordingly. For different logbook subtrees, map
+specific candidate =entry_type= values to =:file= and =:id= destinations.
+
+During review, edit the Org text normally, then use:
+
+| Key | Action |
+|-
+| =C-c C-c= | Keep the edited draft and continue |
+| =C-c C-k= | Remove this draft and skip it |
+| =C-c C-d= | Defer it until the remaining candidates are reviewed |
+| =C-c C-q= | Quit and discard unreviewed candidates |
+
+Each draft includes =RM_GROUP_KEY= and =RM_SOURCE_IDS= properties. If its group
+key is already present in the target buffer, Emacs asks whether to insert it
+again. A skipped or deferred draft is removed from the buffer. Kept entries
+remain authored logbook records; review their wording and source links before
+accepting them.
+
+** Make a focused QA report
+
+The report command collects performed QA results and supports JSON, plain
+text, HTML, or a temporary local browser preview:
 
 #+begin_src sh
 python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --where 'issue in action,tolerance,comment' \
-  --render plaintext
-#+end_src
-
-For browser inspection without building a separate app:
-
-#+begin_src sh
-python -m radlog.cli \
-  --report qa \
-  --last-week \
+  --report qa --last-week \
   --where 'issue in action,tolerance,comment' \
   --render html-serve
 #+end_src
 
-=--render html= writes the same HTML to stdout. =--render html-serve= starts a
-temporary localhost server, opens the report in the default browser, and runs
-until interrupted with =Ctrl-C=.
+=--render html-serve= serves a temporary local page until =Ctrl-C=.
+=--render html= writes HTML to stdout. Use =--start= and =--end= for explicit
+dates, =--user= to restrict QA submitted by a particular account, and
+=--group-by equipment= or =--group-by date= for display. Reports include all
+result rows by default; =--filter-by-results action,tol,comment= is a short
+form for common filtering.
 
-Use =--last-day=, =--last-week=, or =--last-month= for common date windows, or
-use explicit =--start YYYY-MM-DD --end YYYY-MM-DD= dates.
-
-Report filters use a small =find=-style expression syntax via repeatable
-=--where= arguments. Repeated =--where= expressions are combined with
-implicit AND.
-
-Supported boolean operators, from highest to lowest precedence:
-
-#+begin_example
-( EXPR )
-! EXPR
--not EXPR
-EXPR1 -a EXPR2
-EXPR1 -and EXPR2
-EXPR1 EXPR2      # implicit AND
-EXPR1 -o EXPR2
-EXPR1 -or EXPR2
-EXPR1 , EXPR2
-#+end_example
-
-Supported predicate operators:
-
-#+begin_example
-=
-!=
-in
-not-in
-contains
-matches
-exists
-missing
-#+end_example
-
-Examples:
+Repeat =--where= to combine conditions with AND. Expressions support
+parentheses, =!=, =in=, =not-in=, =contains=, =matches=, =exists=,
+=missing=, =-not=, =-and=, and =-or=; a comma is also an OR operator.
 
 #+begin_src sh
 python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --where '( issue = action -o issue = tolerance ) -and equipment matches "LA.*|CT.*"' \
-  --where 'collection contains Monthly' \
+  --report qa --last-month \
+  --where '( issue = action -or issue = tolerance ) -and equipment matches "LA.*"' \
   --render plaintext
 #+end_src
 
-By default, =--report qa= collects all QA rows, including normal and skipped
-results. Use =--filter-by-results= to narrow that to specific result classes,
-for example =--filter-by-results action,tol,comment= for abnormal/comment-only
-reports.
+Define repeatable named reports under =[reports.NAME]= in your TOML config;
+=config.toml.example= contains one. A preset may set its date window, filters,
+renderer, and grouping. CLI date/render/grouping flags can override those
+defaults. Preset source filters are not combined with CLI source filters;
+define a second preset for a different selection.
 
-For reports submitted by a specific RadMachine user, prefer =--user=. The QA
-report pushes that filter down to RadMachine as =created_by__username= before
-doing local =--where= filtering:
+** Compose a QA result from earlier sessions
 
-#+begin_src sh
-python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --user gillmanas \
-  --filter-by-results all \
-  --group-by equipment \
-  --render plaintext
-#+end_src
-
-HTML and plaintext reports can be grouped by =equipment=, the default, or by
-=date=:
-
-#+begin_src sh
-python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --group-by date \
-  --render html-serve
-#+end_src
-
-You can also define named report presets in =config.toml=:
-
-#+begin_src toml
-[reports.my-weekly-comments]
-type = "qa"
-title = "My Weekly Comments"
-last = "week"
-filter_by_results = "comment"
-where = ["commenter = gillmanas, commenter = colleague-user"]
-render = "html-serve"
-group_by = "equipment"
-#+end_src
-
-Comma is a low-precedence OR, matching =find= style. This is equivalent to:
-
-#+begin_src toml
-where = ["commenter = gillmanas -or commenter = colleague-user"]
-#+end_src
-
-Do not set =user= in this preset unless you also want to restrict collection to
-QA submitted by one RadMachine user. =user= and =commenter= are separate
-filters.
-
-Then run:
-
-#+begin_src sh
-python -m radlog.cli --report my-weekly-comments
-#+end_src
-
-Preset time window, renderer, and grouping are defaults, so they can be
-overridden:
-
-#+begin_src sh
-python -m radlog.cli \
-  --report my-weekly-comments \
-  --last-month \
-  --group-by date \
-  --render plaintext
-#+end_src
-
-Preset filters are intentionally not merged with CLI filters. If a preset
-defines =user=, =filter_by_results=, =where=, or =params=, do not combine it
-with =--user=, =--filter-by-results=, =--where=, =--param=, =--limit=, or
-=--offset=. Define another preset instead.
-
-If live collection is unexpectedly slow, add =--profile=. It prints collection
-counters and timings to stderr without changing the report output:
-
-#+begin_src sh
-python -m radlog.cli \
-  --report qa \
-  --last-week \
-  --where 'issue in action,tolerance,comment' \
-  --render plaintext \
-  --profile
-#+end_src
-
-The QA report groups rows by a generic equipment group.
-If =--start= / =--end= are omitted, it defaults to the last seven days. It
-queries recent QA sessions first and stops once it reaches records older than
-the requested start date.
-
-* Examples
-
-The =examples/= directory contains site-specific workflow code that is not part
-of the reusable radlog library.
-
-Current examples:
-
-- =examples/quickcheck_constancy_tcc.py=
-  - compiler for a TCC Monthly QuickCheck QA composite test
-  - reads existing monthly dosimetry and QuickCheck sessions
-  - extracts QuickCheck serial, CAX output, and monthly output-deviation values
-  - emits a JSON submission payload keyed by target Monthly QuickCheck QA test slugs
-  - only mutates RadMachine when explicitly called with =--practice-run= or =--upload=
-
-Dry-run by explicit source session IDs:
+=examples/quickcheck_constancy_tcc.py= is a site-specific example. It finds
+monthly dosimetry and same-day QuickCheck sessions, resolves result slugs,
+then builds a QuickCheck constancy submission payload with source links.
 
 #+begin_src sh
 python -m examples.quickcheck_constancy_tcc \
-  --session-id 15091 \
-  --session-id 15093
+  --linac LA11 --date 2026-09-30 \
+  --interactive-select --dry-run
 #+end_src
 
-Dry-run by linac/date:
+The default is a dry run: it prints the draft and payload without submitting
+anything. =--interactive-select= lets you choose when more than one session
+matches a source role. =--practice-run= submits to the example's practice
+assignment; =--upload= submits to the target assignment resolved from the
+QuickCheck serial. Both write modes require a battery-check result and should
+be adapted to the site's own test definitions before use. Run this example
+with =python -m examples.quickcheck_constancy_tcc= from the checkout root.
 
-#+begin_src sh
-python -m examples.quickcheck_constancy_tcc \
-  --config config.toml \
-  --linac LAx \
-  --date 2026-07-07
-#+end_src
+* Build a site workflow
 
-Or use the same relative date flags as the main CLI when searching for monthly
-dosimetry source sessions. If multiple monthly dates are found, the script
-prompts for the intended date, then only includes QuickCheck sessions from that
-same day:
+The reusable layers are intentionally small:
 
-#+begin_src sh
-python -m examples.quickcheck_constancy_tcc \
-  --linac LAx \
-  --last-month \
-  --interactive-select
-#+end_src
+- =radlog.api.RadMachineClient= handles authenticated JSON requests,
+  pagination, and selected typed endpoints.
+- =radlog.rm_models= exposes common API fields while retaining each raw
+  payload for fields the model does not yet know.
+- =radlog.collect= resolves QA sessions with their assignments and units,
+  collects service events, and normalizes source records.
+- =radlog.qa_results= maps performed result rows to test-definition slugs.
+- =radlog.group= converts normalized records into candidates using a
+  =GroupingRules= object.
+- =radlog.render= and =radlog.renderers= render candidate drafts.
 
-The example has =--ui tui= and =--ui gui= entry points for linac/date input.
-When multiple matching source sessions exist for the same source role, the
-non-interactive path defaults to the latest. Use =--interactive-select=, or
-=--ui tui= / =--ui gui=, to choose the intended source session before compiling
-the dry-run payload.
-
-Run modes:
-
-- =--dry-run=, the default, prints the payload and source draft without uploading
-- =--practice-run= uploads to the =TEST LINAC= practice UnitTestCollection
-- =--upload= resolves the real QuickCheck UnitTestCollection from the detected serial number and uploads there
-
-In RadMachine/QATrack terminology, a UnitTestCollection is an assignment of a
-test list to a unit. It is not a UTC time value.
-
-* API Model Layer
-
-The Python side keeps a thin mirror of the RadMachine API objects it currently
-uses in =radlog/rm_models.py=.
-
-These models are intentionally partial and tolerant:
-
-- known fields are exposed as attributes
-- unknown fields are preserved in =raw=
-- helper properties expose common concepts such as =remote_id= and
-  =performed_at=
-- normalized workflow models such as =SourceRecord= are still separate
-
-This means code can move away from ad hoc dictionary access without pretending
-the RadMachine API is fully documented or stable.
-
-The lower-level client still exposes =get_json= and =paginate= for probing, but
-common endpoints also have typed helpers such as:
-
-- =qa_test_list_instances=
-- =qa_test_instances=
-- =qa_unit_test_collections=
-- =units=
-- =service_events=
-- =service_log_return_to_service_qa=
-
-Workflow code that needs performed QA sessions plus assignment/unit context
-should usually use =radlog.collect.collect_resolved_qa_sessions=. It provides
-date-bounded, ordered collection with metadata caching, optional user/unit
-filtering, and optional collection-name filtering. This keeps example scripts
-from open-coding slow pagination and repeated metadata requests.
-
-When the desired QA assignments are known up front, prefer
-=radlog.collect.collect_unit_test_collections= followed by
-=radlog.collect.collect_resolved_qa_sessions_for_collections=. That avoids a
-broad =qa/testlistinstances= scan and asks RadMachine only for performed
-sessions from the selected assignments.
-
-Workflow code that needs individual performed results by test slug should use
-=radlog.qa_results.numeric_test_value_by_slug= or
-=radlog.qa_results.test_result_by_slug=. These helpers hide the RadMachine
-detail lookup needed to map embedded result row order back to test definition
-slugs.
-
-* Example Draft
-
-Representative current output for a monthly linac QA candidate:
-
-#+begin_example
-**** [2026-03-06 Fri] LAx MQC :LinacName:LAx:
-:PROPERTIES:
-:RM_GROUP_KEY: 2026-03-06_LAx_linac_monthly
-:RM_SOURCE_IDS: qa:13162,qa:13163,qa:13164,qa:13165
-:END:
-Performed as rostered duty:
-- Dosimetry :: Output and relative dosimetry :: 10 MV
-- Dosimetry :: Output and relative dosimetry :: 6 MV
-- Dosimetry :: Output and relative dosimetry :: 6 MV
-- Dosimetry :: Output and relative dosimetry :: 10 MV
-
-Notable events:
-- Output verification/re-baselining
-- Baselines are being reviewed on 10/3
-- Manually enter here
-#+end_example
-
-This is intentionally still a draft. The grouping and rendering need more work,
-but the basic end-to-end path from live API data to draft Org text is now in
-place.
-
-* Emacs Review Controls
-
-During in-place review, the available actions are:
-
-- =C-c C-c= Keep the current draft and continue.
-- =C-c C-k= Remove the current draft and skip it.
-- =C-c C-d= Defer (come back later). The draft is removed for now and returned
-  to after the current pass through the remaining candidates.
-- =C-c C-q= Quit Task. After confirmation, the current draft is removed and all
-  remaining and deferred candidates are discarded. Entries already kept are
-  not removed.
-
-* Configuration
-
-Expected local setup:
-
-- copy =config.toml.example= to the user config path, normally
-  =~/.config/radlog/config.toml= on macOS/Linux or
-  =%APPDATA%\radlog\config.toml= on Windows
-- put the RadMachine API token in =[radmachine] token = "...";= CLI JSON output
-  redacts this value
-- alternatively keep =token_env = "RADMACHINE_TOKEN"= in config and place the
-  actual token in a shell environment, password manager, or local =.env=
-- if using a local =.env=, let =direnv= load it via =.envrc=
-- optionally set =RADLOG_CONFIG= or pass =--config= to use another config file
-
-The user cache path is normally =~/.cache/radlog= on macOS/Linux or
-=%LOCALAPPDATA%\radlog\cache= on Windows. Future local metadata caches should
-use that location rather than repository-local files.
-
-** Using the provided example extensions
-
-The repository includes example extension modules under =examples/=. For
-example, =examples/render_ag_org.py= provides the =render_candidate= logbook
-renderer. To use it from the normal user configuration, add the directory
-containing the module to =[extensions] paths= and select the callable under
-=[render]=:
+To customize a logbook, copy =examples/group_tcc_similar.py= and
+=examples/render_ag_org.py= into a personal extensions directory and set:
 
 #+begin_src toml
 [extensions]
-paths = ["~/src/radlog/examples"]
+paths = ["~/.config/radlog/extensions"]
+
+[grouping]
+rules = "my_grouping:RULES"
 
 [render]
-logbook_org_renderer = "render_ag_org:render_candidate"
+logbook_org_renderer = "my_render:render_candidate"
 #+end_src
 
-Adjust the search path to match the location of the repository checkout.
-Home-relative paths beginning with =~= are expanded automatically. A stable
-home-relative or absolute path is preferable to ="./examples"= because a
-relative extension path is resolved from the CLI process's working directory,
-which can vary when radlog is invoked from Emacs or another application.
+Extension paths are expanded from =~=; relative paths are resolved from the
+process working directory. Keep site names, source selection rules, and
+output templates in those modules rather than changing the API client.
+For a known set of assignments, use
+=collect_unit_test_collections= followed by
+=collect_resolved_qa_sessions_for_collections= to avoid scanning all QA
+sessions. The =examples/sample_api_payloads/= directory contains redacted
+records for offline development.
 
-Extension callables use the =MODULE:ATTRIBUTE= form. The module filename above
-is therefore =render_ag_org.py= and the callable defined in it is
-=render_candidate=.
+* Scope and current limits
 
-* Sample Payloads
-
-Representative redacted payload examples live in:
-
-- =examples/sample_api_payloads/qa_testlistinstance.json=
-- =examples/sample_api_payloads/qa_unittestcollection.json=
-- =examples/sample_api_payloads/units_unit.json=
-- =examples/sample_api_payloads/servicelog_serviceevent.json=
-- =examples/sample_api_payloads/servicelog_returntoserviceqa.json=
-
-These are meant for documentation and local development when a live API session
-is inconvenient.
-
-* What Is Next
-
-Immediate next work:
-
-- improve grouping so full linac monthly QA sets collapse cleanly
-- deduplicate rendered items and comments
-- add better prompt scaffolding for notable events
-- wire the rendered candidates into the Emacs review flow
-
-Broader later work:
-
-- post-PMI QA
-- CT monthly QA
-- service events
-- faults
-- duplicate detection during insertion
+The library supports the endpoints and shapes exercised here; it is not a
+complete RadMachine SDK. The default logbook grouping is deliberately
+conservative, while the richer examples encode local conventions. A draft
+requires human review, especially for clinical meaning, notable events, and
+links. The QA report path currently covers QA result rows, not every
+RadMachine report type. Fault extraction and broader candidate classification
+remain future work; see =TODO.org=.
