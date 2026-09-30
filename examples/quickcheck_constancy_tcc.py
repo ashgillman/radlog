@@ -53,7 +53,7 @@ QUICKCHECK_SERIAL_ORDER = 0
 
 MONTHLY_OUTPUT_DEVIATION_SLUGS = {
     "6 MV": "linac_monthly_output_deviation_6_mv",
-    "6 FFF": "linac_monthly_output_deviation_6_fff",
+    "6 FFF": "linac_monthly_output_deviation_6_mv_fff",
     "10 MV": "linac_monthly_output_deviation_10_mv",
     "6 MeV": "linac_monthly_output_deviation_6_mev",
     "8 MeV": "linac_monthly_output_deviation_8_mev",
@@ -243,7 +243,7 @@ def _submission_comment(draft: QuickcheckConstancyDraft) -> str:
             (
                 (energy, source)
                 for energy, source in draft.energies.items()
-                if energy.endswith(f" {modality}")
+                if energy.endswith(f" {modality}") or (modality == "MV" and energy.endswith(" FFF"))
             ),
             key=lambda item: _energy_sort_key(item[0]),
         )
@@ -376,10 +376,10 @@ def compile_quickcheck_constancy(sessions: list[ResolvedSession]) -> QuickcheckC
             _add_quickcheck_outputs(draft, session, ELECTRON_QUICKCHECK_OUTPUT_SLUGS)
             _add_quickcheck_serial(draft, session)
         elif collection.startswith("Linac Monthly :: Dosimetry :: Output and relative dosimetry :: "):
-            energy = collection.rsplit(" :: ", 1)[-1]
+            energy = _canonical_energy(collection.rsplit(" :: ", 1)[-1])
             _add_solid_water_output(draft, session, energy)
         elif collection.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: "):
-            energy = collection.rsplit(" :: ", 1)[-1]
+            energy = _canonical_energy(collection.rsplit(" :: ", 1)[-1])
             _add_solid_water_output(draft, session, energy)
         else:
             draft.warnings.append(f"Ignored unsupported source collection {collection!r} from session {session.session_id}")
@@ -484,6 +484,13 @@ def _is_monthly_source_collection(name: str) -> bool:
     ) or name.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: ")
 
 
+def _canonical_energy(energy: str) -> str:
+    """Normalize RadMachine energy labels to the names used by target slugs."""
+    if energy in {"6 MV FFF", "6 MV (FFF)", "6 FFF"}:
+        return "6 FFF"
+    return energy
+
+
 def _session_dates(sessions: list[ResolvedSession]) -> list[str]:
     dates = {date for session in sessions if (date := _session_date(session))}
     return sorted(dates, reverse=True)
@@ -566,10 +573,10 @@ def _source_role(collection_name: str) -> str | None:
     if collection_name == "Quickcheck Electrons":
         return "quickcheck_electrons"
     if collection_name.startswith("Linac Monthly :: Dosimetry :: Output and relative dosimetry :: "):
-        energy = collection_name.rsplit(" :: ", 1)[-1]
+        energy = _canonical_energy(collection_name.rsplit(" :: ", 1)[-1])
         return f"monthly_photon_{energy}"
     if collection_name.startswith("Linac Monthly :: Dosimetry :: Output and energy constancy :: "):
-        energy = collection_name.rsplit(" :: ", 1)[-1]
+        energy = _canonical_energy(collection_name.rsplit(" :: ", 1)[-1])
         return f"monthly_electron_{energy}"
     return None
 
